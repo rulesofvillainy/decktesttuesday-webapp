@@ -1,7 +1,13 @@
 import React, { Suspense } from 'react';
 import { Metadata } from 'next';
 import { ObsOverlayClient } from '@/components/ObsOverlayClient';
-import { getSetting, getEnrichedEpisodeById, getEnrichedEpisodes, getDeckById } from '@/lib/db';
+import {
+  getSetting,
+  getEnrichedEpisodeById,
+  getEnrichedEpisodes,
+  getDeckById,
+  getOverlaySiteUrl,
+} from '@/lib/db';
 
 export const metadata: Metadata = {
   title: 'OBS Overlay | Deck Test Tuesday',
@@ -13,10 +19,12 @@ export const dynamic = 'force-dynamic';
 export default async function ObsOverlayPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ episodeId?: string }>;
+  searchParams?: Promise<{ episodeId?: string; url?: string }>;
 }) {
   const resolvedParams = searchParams ? await searchParams : {};
   let targetId = resolvedParams?.episodeId || null;
+  const configuredSiteUrl = await getOverlaySiteUrl();
+  const initialSiteUrl = resolvedParams?.url?.trim() || configuredSiteUrl;
 
   if (!targetId) {
     targetId = await getSetting('obs_active_episode_id');
@@ -59,7 +67,11 @@ export default async function ObsOverlayPage({
         </div>
       }
     >
-      <ObsOverlayClient initialEpisode={episode} initialLiveMatch={liveMatch} />
+      <ObsOverlayClient
+        initialEpisode={episode}
+        initialLiveMatch={liveMatch}
+        initialSiteUrl={initialSiteUrl}
+      />
     </Suspense>
   );
 }

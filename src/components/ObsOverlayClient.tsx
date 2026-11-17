@@ -10,16 +10,27 @@ interface ObsOverlayClientProps {
   initialEpisodeId?: string | null;
   initialEpisode?: EnrichedEpisode | null;
   initialLiveMatch?: any | null;
+  initialSiteUrl?: string;
 }
 
-export function ObsOverlayClient({ initialEpisodeId, initialEpisode, initialLiveMatch }: ObsOverlayClientProps) {
+export function ObsOverlayClient({
+  initialEpisodeId,
+  initialEpisode,
+  initialLiveMatch,
+  initialSiteUrl,
+}: ObsOverlayClientProps) {
   const searchParams = useSearchParams();
   const paramEpisodeId = searchParams.get('episodeId') || initialEpisodeId;
+  const paramSiteUrl = searchParams.get('url')?.trim() || '';
 
   // Icon style: 'dot' (default, matches user sketch & compact) or 'official'
   const iconParam = searchParams.get('icons');
   const [iconMode, setIconMode] = useState<'dot' | 'official'>(
     iconParam === 'official' ? 'official' : 'dot'
+  );
+
+  const [siteUrl, setSiteUrl] = useState<string>(
+    paramSiteUrl || initialSiteUrl || 'DTT.Villainy.Ink'
   );
 
   const [activeEpisodeId, setActiveEpisodeId] = useState<string | null>(
@@ -55,6 +66,9 @@ export function ObsOverlayClient({ initialEpisodeId, initialEpisode, initialLive
         const obsRes = await fetch('/api/admin/obs-active', { cache: 'no-store' });
         if (obsRes.ok) {
           const obsData = await obsRes.json();
+          if (!paramSiteUrl && obsData.siteUrl) {
+            setSiteUrl(obsData.siteUrl);
+          }
           if (obsData.activeEpisodeId) {
             targetId = obsData.activeEpisodeId;
             setActiveEpisodeId(targetId);
@@ -122,7 +136,7 @@ export function ObsOverlayClient({ initialEpisodeId, initialEpisode, initialLive
     } finally {
       setLoading(false);
     }
-  }, [activeEpisodeId]);
+  }, [activeEpisodeId, paramSiteUrl]);
 
   useEffect(() => {
     fetchData();
@@ -144,6 +158,15 @@ export function ObsOverlayClient({ initialEpisodeId, initialEpisode, initialLive
 
     if (event.type === 'live_match_cleared') {
       setLiveMatch(null);
+      return;
+    }
+
+    // Handle configurable footer URL updates in real-time
+    if (event.type === 'obs_site_url_updated') {
+      const nextUrl = String(event.siteUrl || '').trim();
+      if (!paramSiteUrl && nextUrl) {
+        setSiteUrl(nextUrl);
+      }
       return;
     }
 
@@ -448,6 +471,16 @@ export function ObsOverlayClient({ initialEpisodeId, initialEpisode, initialLive
             </>
           )}
         </div>
+
+        {/* Bottom Center Website URL Chip */}
+        {siteUrl && (
+          <div className="shrink-0 pt-1.5 flex items-center justify-center">
+            <span className="inline-flex items-center gap-1.5 bg-[#1C0F2F] text-white font-mono font-bold text-[10px] tracking-wider px-2.5 py-0.5 rounded-md border-[1.5px] border-black shadow-[1.5px_1.5px_0px_#000000]">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#00F5D4] shrink-0" />
+              <span>{siteUrl}</span>
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );

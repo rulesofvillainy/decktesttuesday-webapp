@@ -1,13 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isAdminAuthenticated } from '@/lib/auth';
-import { getEpisodeById, getEpisodes, getSetting, setSetting } from '@/lib/db';
+import {
+  deleteSetting,
+  getEnvOverlaySiteUrl,
+  getEpisodeById,
+  getEpisodes,
+  getOverlaySiteUrl,
+  getSetting,
+  setSetting,
+} from '@/lib/db';
 import { broadcastRealtimeEvent } from '@/lib/realtime';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
   try {
-    const assignedId = await getSetting('obs_active_episode_id');
+    const [assignedId, customSiteUrl, siteUrl] = await Promise.all([
+      getSetting('obs_active_episode_id'),
+      getSetting('obs_site_url'),
+      getOverlaySiteUrl(),
+    ]);
+    const envSiteUrl = getEnvOverlaySiteUrl();
     let targetEpisode = null;
 
     if (assignedId) {
@@ -29,6 +42,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       activeEpisodeId: targetEpisode ? targetEpisode.id : null,
       episode: targetEpisode,
+      siteUrl,
+      customSiteUrl: customSiteUrl.trim(),
+      envSiteUrl,
     });
   } catch (err: unknown) {
     const message =
@@ -45,6 +61,29 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
+
+    // Update configurable OBS footer URL badge
+    if (body.siteUrl !== undefined && body.episodeId === undefined) {
+      const nextUrl = String(body.siteUrl ?? '').trim();
+      if (nextUrl) {
+        await setSetting('obs_site_url', nextUrl);
+      } else {
+        await deleteSetting('obs_site_url');
+      }
+
+      const resolvedSiteUrl = await getOverlaySiteUrl();
+      broadcastRealtimeEvent('obs_site_url_updated', {
+        siteUrl: resolvedSiteUrl,
+      });
+
+      return NextResponse.json({
+        success: true,
+        siteUrl: resolvedSiteUrl,
+        customSiteUrl: nextUrl,
+        envSiteUrl: getEnvOverlaySiteUrl(),
+      });
+    }
+
     const episodeId = String(body.episodeId || '').trim();
 
     if (!episodeId) {
@@ -71,6 +110,7 @@ export async function POST(req: NextRequest) {
       success: true,
       activeEpisodeId: episodeId,
       episode,
+      siteUrl: await getOverlaySiteUrl(),
     });
   } catch (err: unknown) {
     const message =

@@ -130,6 +130,10 @@ export function AdminDashboardClient({
   const [obsActiveEpisodeId, setObsActiveEpisodeId] = useState<string | null>(null);
   const [obsSettingBusy, setObsSettingBusy] = useState<string | null>(null);
   const [copiedObsLink, setCopiedObsLink] = useState(false);
+  const [obsSiteUrlInput, setObsSiteUrlInput] = useState<string>('DTT.Villainy.Ink');
+  const [obsEnvSiteUrl, setObsEnvSiteUrl] = useState<string>('DTT.Villainy.Ink');
+  const [obsHasCustomSiteUrl, setObsHasCustomSiteUrl] = useState<boolean>(false);
+  const [savingObsSiteUrl, setSavingObsSiteUrl] = useState<boolean>(false);
 
   useEffect(() => {
     fetch('/api/admin/obs-active')
@@ -138,9 +142,44 @@ export function AdminDashboardClient({
         if (data.activeEpisodeId) {
           setObsActiveEpisodeId(data.activeEpisodeId);
         }
+        if (data.siteUrl) {
+          setObsSiteUrlInput(data.siteUrl);
+        }
+        if (data.envSiteUrl) {
+          setObsEnvSiteUrl(data.envSiteUrl);
+        }
+        setObsHasCustomSiteUrl(Boolean(data.customSiteUrl));
       })
       .catch((err) => console.error('Failed to get OBS active stream', err));
   }, []);
+
+  const handleSaveObsSiteUrl = async (nextUrl: string) => {
+    setSavingObsSiteUrl(true);
+    try {
+      const res = await fetch('/api/admin/obs-active', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ siteUrl: nextUrl }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setObsSiteUrlInput(data.siteUrl || '');
+        if (data.envSiteUrl) {
+          setObsEnvSiteUrl(data.envSiteUrl);
+        }
+        setObsHasCustomSiteUrl(Boolean(data.customSiteUrl));
+        setBannerMsg(
+          data.customSiteUrl
+            ? `📺 OBS Overlay footer URL updated to "${data.siteUrl}"!`
+            : `📺 OBS Overlay footer URL reset to default ("${data.siteUrl}").`
+        );
+      }
+    } catch (err) {
+      console.error('Failed to update OBS footer URL', err);
+    } finally {
+      setSavingObsSiteUrl(false);
+    }
+  };
 
   const handleSetObsEpisode = async (epId: string) => {
     setObsSettingBusy(epId);
@@ -193,6 +232,12 @@ export function AdminDashboardClient({
       const newEpId = event.episodeId as string;
       if (newEpId) {
         setObsActiveEpisodeId(newEpId);
+      }
+    }
+    if (event.type === 'obs_site_url_updated') {
+      const nextUrl = String(event.siteUrl || '').trim();
+      if (nextUrl) {
+        setObsSiteUrlInput(nextUrl);
       }
     }
   });
@@ -882,7 +927,7 @@ export function AdminDashboardClient({
           }`}
         >
           <Database className="w-4 h-4" />
-          4. Retention &amp; DB
+          4. Settings &amp; DB
         </button>
       </div>
 
@@ -1648,47 +1693,105 @@ export function AdminDashboardClient({
       )}
 
       {/* =================================================================== */}
-      {/* TAB 4: RETENTION & DB TOOLS */}
+      {/* TAB 4: SETTINGS, RETENTION & DB TOOLS */}
       {/* =================================================================== */}
       {activeTab === 'tools' && (
-        <div className="brutal-card p-5 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b-[2px] border-black pb-3">
-            <div>
-              <h2 className="text-lg font-black uppercase text-white flex items-center gap-2">
-                <Database className="w-5 h-5 text-[#00F5D4]" />
-                90-Day Submission Retention &amp; Storage
-              </h2>
-              <p className="text-xs text-neutral-400 mt-0.5">
-                Automatically keeps your free PostgreSQL tier storage lean by deleting processed submissions older than 90 days.
-              </p>
+        <div className="space-y-5">
+          {/* OBS Overlay Configurable Site URL */}
+          <div className="brutal-card p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b-[2px] border-black pb-3">
+              <div>
+                <h2 className="text-lg font-black uppercase text-white flex items-center gap-2">
+                  <Tv className="w-5 h-5 text-[#FFB703]" />
+                  OBS Overlay Footer URL Badge
+                </h2>
+                <p className="text-xs text-neutral-400 mt-0.5">
+                  Controls the small website URL chip at the bottom center of{' '}
+                  <code className="font-mono text-[#00F5D4]">/overlay</code>. Updates open OBS overlays immediately and falls back to{' '}
+                  <code className="font-mono text-neutral-200">OVERLAY_SITE_URL</code> ({obsEnvSiteUrl}).
+                </p>
+              </div>
             </div>
-            <button
-              type="button"
-              onClick={handleRunRetentionPrune}
-              disabled={pruning}
-              className="brutal-btn bg-[#FF2E93] text-white px-4 py-2 text-xs shrink-0"
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSaveObsSiteUrl(obsSiteUrlInput);
+              }}
+              className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5"
             >
-              <Trash2 className="w-4 h-4" />
-              {pruning ? 'Pruning...' : `Prune >90d Submissions (${retention.prunableOldCount})`}
-            </button>
+              <input
+                type="text"
+                value={obsSiteUrlInput}
+                onChange={(e) => setObsSiteUrlInput(e.target.value)}
+                placeholder={obsEnvSiteUrl}
+                className="brutal-input text-xs font-mono flex-1"
+              />
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="submit"
+                  disabled={savingObsSiteUrl}
+                  className="brutal-btn bg-[#00F5D4] text-black px-4 py-2 text-xs"
+                >
+                  <Save className="w-4 h-4" />
+                  {savingObsSiteUrl ? 'Saving...' : 'Save URL'}
+                </button>
+                {obsHasCustomSiteUrl && (
+                  <button
+                    type="button"
+                    disabled={savingObsSiteUrl}
+                    onClick={() => handleSaveObsSiteUrl('')}
+                    className="brutal-btn bg-[#2E184A] text-neutral-200 hover:text-white px-3 py-2 text-xs"
+                    title={`Clear admin override and use ${obsEnvSiteUrl}`}
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    Reset
+                  </button>
+                )}
+              </div>
+            </form>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center font-mono text-xs">
-            <div className="bg-[#181920] border border-black p-3">
-              <div className="text-neutral-400 uppercase">DB Mode</div>
-              <div className="text-lg font-black text-[#00F5D4] mt-1">{retention.dbMode}</div>
+          {/* Retention Card */}
+          <div className="brutal-card p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b-[2px] border-black pb-3">
+              <div>
+                <h2 className="text-lg font-black uppercase text-white flex items-center gap-2">
+                  <Database className="w-5 h-5 text-[#00F5D4]" />
+                  90-Day Submission Retention &amp; Storage
+                </h2>
+                <p className="text-xs text-neutral-400 mt-0.5">
+                  Automatically keeps your free PostgreSQL tier storage lean by deleting processed submissions older than 90 days.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleRunRetentionPrune}
+                disabled={pruning}
+                className="brutal-btn bg-[#FF2E93] text-white px-4 py-2 text-xs shrink-0"
+              >
+                <Trash2 className="w-4 h-4" />
+                {pruning ? 'Pruning...' : `Prune >90d Submissions (${retention.prunableOldCount})`}
+              </button>
             </div>
-            <div className="bg-[#181920] border border-black p-3">
-              <div className="text-neutral-400 uppercase">Submissions</div>
-              <div className="text-lg font-black text-white mt-1">{retention.totalSubmissions}</div>
-            </div>
-            <div className="bg-[#181920] border border-black p-3">
-              <div className="text-neutral-400 uppercase">&gt;90d Eligible</div>
-              <div className="text-lg font-black text-[#FF4B91] mt-1">{retention.prunableOldCount}</div>
-            </div>
-            <div className="bg-[#181920] border border-black p-3">
-              <div className="text-neutral-400 uppercase">Lorcast Cache</div>
-              <div className="text-lg font-black text-[#FFB703] mt-1">{retention.cachedCardsCount}</div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center font-mono text-xs">
+              <div className="bg-[#181920] border border-black p-3">
+                <div className="text-neutral-400 uppercase">DB Mode</div>
+                <div className="text-lg font-black text-[#00F5D4] mt-1">{retention.dbMode}</div>
+              </div>
+              <div className="bg-[#181920] border border-black p-3">
+                <div className="text-neutral-400 uppercase">Submissions</div>
+                <div className="text-lg font-black text-white mt-1">{retention.totalSubmissions}</div>
+              </div>
+              <div className="bg-[#181920] border border-black p-3">
+                <div className="text-neutral-400 uppercase">&gt;90d Eligible</div>
+                <div className="text-lg font-black text-[#FF4B91] mt-1">{retention.prunableOldCount}</div>
+              </div>
+              <div className="bg-[#181920] border border-black p-3">
+                <div className="text-neutral-400 uppercase">Lorcast Cache</div>
+                <div className="text-lg font-black text-[#FFB703] mt-1">{retention.cachedCardsCount}</div>
+              </div>
             </div>
           </div>
         </div>

@@ -1793,5 +1793,22 @@ export async function deleteSetting(key: string): Promise<void> {
   }
 }
 
+export const DEFAULT_OVERLAY_SITE_URL = 'DTT.Villainy.Ink';
+
+export function getEnvOverlaySiteUrl(): string {
+  return (
+    process.env.OVERLAY_SITE_URL?.trim() ||
+    process.env.NEXT_PUBLIC_OVERLAY_SITE_URL?.trim() ||
+    process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
+    DEFAULT_OVERLAY_SITE_URL
+  );
+}
+
+export async function getOverlaySiteUrl(): Promise<string> {
+  const saved = (await getSetting('obs_site_url')).trim();
+  return saved || getEnvOverlaySiteUrl();
+}
+
+
 
 
