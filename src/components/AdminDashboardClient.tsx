@@ -38,6 +38,7 @@ import {
   LORCANA_SETS,
   MATCH_FORMATS,
   SAMPLE_DECKLIST_TEXT,
+  formatPlayedBy,
 } from '@/lib/constants';
 import {
   Deck,
@@ -183,7 +184,8 @@ export function AdminDashboardClient({
       event.type === 'deck_unassigned' ||
       event.type === 'deck_created' ||
       event.type === 'deck_updated' ||
-      event.type === 'episode_updated'
+      event.type === 'episode_updated' ||
+      event.type === 'episode_live_toggled'
     ) {
       reloadAll();
     }
@@ -447,6 +449,34 @@ export function AdminDashboardClient({
       if (res.ok) {
         await reloadAll();
         setBannerMsg('Unassigned deck from stream.');
+      }
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handlePruneUnplayedDecks = async (episodeId: string) => {
+    setBusyId(`prune-${episodeId}`);
+    try {
+      const res = await fetch('/api/decks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'prune_unplayed',
+          episode_id: episodeId,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const removedCount = Array.isArray(data.removed_deck_ids)
+          ? data.removed_deck_ids.length
+          : 0;
+        await reloadAll();
+        setBannerMsg(
+          removedCount > 0
+            ? `Unassigned ${removedCount} unplayed deck(s) from stream.`
+            : 'No unplayed decks to unassign.'
+        );
       }
     } finally {
       setBusyId(null);
@@ -1330,95 +1360,141 @@ export function AdminDashboardClient({
                         </div>
 
                         {/* 2. Assigned Decks */}
-                        <div className="space-y-3 border-t border-black/80 pt-4">
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                            <div>
-                              <h4 className="text-sm font-black uppercase text-white flex items-center gap-2">
-                                <Layers className="w-4 h-4 text-[#00F5D4]" />
-                                Decks Assigned to this Stream ({ep.decks.length})
-                              </h4>
-                              <p className="text-[11px] text-neutral-400">
-                                These decks will appear on the stream page and mobile controller.
-                              </p>
-                            </div>
+                        {(() => {
+                          const playedInEpIds = new Set(
+                            ep.matches
+                              .flatMap((m) => [m.andy_deck_id, m.kirsten_deck_id])
+                              .filter(Boolean)
+                          );
+                          const unplayedInEpCount = ep.decks.filter(
+                            (d) => !playedInEpIds.has(d.id)
+                          ).length;
+                          const showPruneUnplayed =
+                            !ep.is_live &&
+                            !ep.is_upcoming &&
+                            ep.matches.length > 0 &&
+                            unplayedInEpCount > 0;
 
-                            {/* Assign library deck dropdown */}
-                            <div className="flex items-center gap-2">
-                              <select
-                                id={`stream-deck-assign-select-${ep.id}`}
-                                defaultValue=""
-                                className="brutal-input text-xs py-1.5"
-                              >
-                                <option value="" disabled>
-                                  + Assign Deck from Library...
-                                </option>
-                                {decks
-                                  .filter((d) => !ep.decks.some((ed) => ed.id === d.id))
-                                  .map((d) => (
-                                    <option key={d.id} value={d.id}>
-                                      {d.deck_name} ({d.ink_one}/{d.ink_two})
-                                    </option>
-                                  ))}
-                              </select>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const sel = document.getElementById(
-                                    `stream-deck-assign-select-${ep.id}`
-                                  ) as HTMLSelectElement;
-                                  if (sel && sel.value) {
-                                    handleAssignDeckToEpisode(ep.id, sel.value);
-                                    sel.value = '';
-                                  }
-                                }}
-                                className="brutal-btn bg-[#00F5D4] text-black px-3 py-1.5 text-xs shrink-0"
-                              >
-                                Assign
-                              </button>
-                            </div>
-                          </div>
-
-                          {ep.decks.length === 0 ? (
-                            <div className="bg-[#140A20] border-[2px] border-black p-4 text-xs font-mono text-neutral-400">
-                              No decks currently assigned to this stream. Select a deck from the library above to assign it!
-                            </div>
-                          ) : (
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                              {ep.decks.map((deck) => (
-                                <div
-                                  key={deck.id}
-                                  className="bg-[#1C0F2F] border-[2px] border-black p-3 space-y-2 flex flex-col justify-between"
-                                >
-                                  <div>
-                                    <div className="flex items-center justify-between gap-1.5">
-                                      <InkPairBadges inkOne={deck.ink_one} inkTwo={deck.ink_two} size="sm" />
-                                    </div>
-                                    <div className="font-black text-sm uppercase text-white mt-1.5 truncate">
-                                      {deck.deck_name}
-                                    </div>
-                                  </div>
-
-                                  <div className="flex items-center justify-between border-t border-black/60 pt-2 text-xs">
-                                    <button
-                                      type="button"
-                                      onClick={() => setInspectingDeck(deck)}
-                                      className="text-[#00F5D4] font-mono underline"
-                                    >
-                                      Inspect Cards
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleUnassignDeckFromEpisode(ep.id, deck.id)}
-                                      className="text-[#D62828] font-bold text-xs hover:underline"
-                                    >
-                                      Unassign
-                                    </button>
-                                  </div>
+                          return (
+                            <div className="space-y-3 border-t border-black/80 pt-4">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                <div>
+                                  <h4 className="text-sm font-black uppercase text-white flex items-center gap-2">
+                                    <Layers className="w-4 h-4 text-[#00F5D4]" />
+                                    Decks Assigned to this Stream ({ep.decks.length})
+                                  </h4>
+                                  <p className="text-[11px] text-neutral-400">
+                                    These decks will appear on the stream page and mobile controller.
+                                  </p>
                                 </div>
-                              ))}
+
+                                <div className="flex flex-wrap items-center gap-2">
+                                  {showPruneUnplayed && (
+                                    <button
+                                      type="button"
+                                      disabled={busyId === `prune-${ep.id}`}
+                                      onClick={() => handlePruneUnplayedDecks(ep.id)}
+                                      className="brutal-btn bg-[#FFB703] text-black px-3 py-1.5 text-xs shrink-0"
+                                      title="Unassign decks that were not played in any match on this ended stream"
+                                    >
+                                      {busyId === `prune-${ep.id}`
+                                        ? 'Unassigning...'
+                                        : `Unassign Unplayed (${unplayedInEpCount})`}
+                                    </button>
+                                  )}
+
+                                  {/* Assign library deck dropdown */}
+                                  <select
+                                    id={`stream-deck-assign-select-${ep.id}`}
+                                    defaultValue=""
+                                    className="brutal-input text-xs py-1.5"
+                                  >
+                                    <option value="" disabled>
+                                      + Assign Deck from Library...
+                                    </option>
+                                    {decks
+                                      .filter((d) => !ep.decks.some((ed) => ed.id === d.id))
+                                      .map((d) => (
+                                        <option key={d.id} value={d.id}>
+                                          {d.deck_name} ({d.ink_one}/{d.ink_two})
+                                        </option>
+                                      ))}
+                                  </select>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const sel = document.getElementById(
+                                        `stream-deck-assign-select-${ep.id}`
+                                      ) as HTMLSelectElement;
+                                      if (sel && sel.value) {
+                                        handleAssignDeckToEpisode(ep.id, sel.value);
+                                        sel.value = '';
+                                      }
+                                    }}
+                                    className="brutal-btn bg-[#00F5D4] text-black px-3 py-1.5 text-xs shrink-0"
+                                  >
+                                    Assign
+                                  </button>
+                                </div>
+                              </div>
+
+                              {ep.decks.length === 0 ? (
+                                <div className="bg-[#140A20] border-[2px] border-black p-4 text-xs font-mono text-neutral-400">
+                                  No decks currently assigned to this stream. Select a deck from the library above to assign it!
+                                </div>
+                              ) : (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                  {ep.decks.map((deck) => {
+                                    const played = formatPlayedBy(deck);
+                                    return (
+                                      <div
+                                        key={deck.id}
+                                        className="bg-[#1C0F2F] border-[2px] border-black p-3 space-y-2 flex flex-col justify-between"
+                                      >
+                                        <div>
+                                          <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                                            <InkPairBadges inkOne={deck.ink_one} inkTwo={deck.ink_two} size="sm" />
+                                            {played && (
+                                              <span
+                                                className={`text-[10px] font-mono font-black uppercase px-1.5 py-0.5 border border-black ${
+                                                  played.includes('Andy')
+                                                    ? 'bg-[#3B1F54] text-[#00F5D4]'
+                                                    : 'bg-[#FF2E93] text-white'
+                                                }`}
+                                              >
+                                                {played}
+                                              </span>
+                                            )}
+                                          </div>
+                                          <div className="font-black text-sm uppercase text-white mt-1.5 truncate">
+                                            {deck.deck_name}
+                                          </div>
+                                        </div>
+
+                                        <div className="flex items-center justify-between border-t border-black/60 pt-2 text-xs">
+                                          <button
+                                            type="button"
+                                            onClick={() => setInspectingDeck(deck)}
+                                            className="text-[#00F5D4] font-mono underline"
+                                          >
+                                            Inspect Cards
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleUnassignDeckFromEpisode(ep.id, deck.id)}
+                                            className="text-[#D62828] font-bold text-xs hover:underline"
+                                          >
+                                            Unassign
+                                          </button>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
                             </div>
-                          )}
-                        </div>
+                          );
+                        })()}
 
                         {/* 3. Matches Section */}
                         <div className="space-y-3 border-t border-black/80 pt-4">

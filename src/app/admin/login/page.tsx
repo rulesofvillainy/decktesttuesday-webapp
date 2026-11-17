@@ -1,13 +1,14 @@
 'use client';
 
 import React, { Suspense, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { KeyRound, Lock } from 'lucide-react';
 
 function AdminLoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const nextUrl = searchParams.get('next') || '/admin';
+  const rawNext = searchParams.get('next') || '/admin';
+  const nextUrl =
+    rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : '/admin';
 
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -31,8 +32,7 @@ function AdminLoginForm() {
         return;
       }
 
-      router.push(nextUrl);
-      router.refresh();
+      window.location.assign(nextUrl);
     } catch {
       setError('Network error verifying password.');
     } finally {

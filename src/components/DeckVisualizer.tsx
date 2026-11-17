@@ -106,10 +106,17 @@ export function DeckVisualizer({ deck }: DeckVisualizerProps) {
       ctx.strokeStyle = '#000000';
       ctx.strokeRect(24, 24, canvas.width - 48, canvas.height - 48);
 
+      const playedByAndy = Array.isArray(deck.played_by)
+        ? deck.played_by.includes('Andy')
+        : deck.pilot === 'Andy';
+      const playedByKirsten = Array.isArray(deck.played_by)
+        ? deck.played_by.includes('Kirsten')
+        : deck.pilot === 'Kirsten';
+
       ctx.fillStyle =
-        deck.pilot === 'Andy'
+        playedByAndy && !playedByKirsten
           ? '#3B1F54'
-          : deck.pilot === 'Kirsten'
+          : playedByKirsten && !playedByAndy
             ? '#FF2E93'
             : '#2A133D';
       ctx.fillRect(24, 24, canvas.width - 48, 120);

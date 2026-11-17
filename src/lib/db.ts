@@ -144,6 +144,13 @@ function readLocalDb(): LocalDatabaseSchema {
       deck_submissions: Array.isArray(parsed.deck_submissions)
         ? parsed.deck_submissions
         : [],
+      excluded_youtube_streams: Array.isArray(parsed.excluded_youtube_streams)
+        ? parsed.excluded_youtube_streams
+        : [],
+      settings:
+        parsed.settings && typeof parsed.settings === 'object'
+          ? parsed.settings
+          : {},
     };
   } catch {
     return {
@@ -241,6 +248,29 @@ export async function getEpisodeByYoutubeId(
 // DECKS & ASSIGNMENTS (DECK MANAGER)
 // =============================================================================
 
+function computePlayedDeckSets(
+  matches: Pick<Match, 'andy_deck_id' | 'kirsten_deck_id'>[]
+): { andyPlayed: Set<string>; kirstenPlayed: Set<string> } {
+  const andyPlayed = new Set<string>();
+  const kirstenPlayed = new Set<string>();
+  for (const m of matches) {
+    if (m.andy_deck_id) andyPlayed.add(m.andy_deck_id);
+    if (m.kirsten_deck_id) kirstenPlayed.add(m.kirsten_deck_id);
+  }
+  return { andyPlayed, kirstenPlayed };
+}
+
+function getPlayedByForDeck(
+  deckId: string,
+  andyPlayed: Set<string>,
+  kirstenPlayed: Set<string>
+): ('Andy' | 'Kirsten')[] {
+  const played_by: ('Andy' | 'Kirsten')[] = [];
+  if (andyPlayed.has(deckId)) played_by.push('Andy');
+  if (kirstenPlayed.has(deckId)) played_by.push('Kirsten');
+  return played_by;
+}
+
 export async function getAllDecks(): Promise<Deck[]> {
   if (isPostgresConfigured()) {
     await ensurePostgresInitialized();
@@ -258,12 +288,7 @@ export async function getAllDecks(): Promise<Deck[]> {
     const { rows: matchRows } = await pool.query(
       `SELECT andy_deck_id, kirsten_deck_id FROM matches`
     );
-    const andyPlayed = new Set<string>();
-    const kirstenPlayed = new Set<string>();
-    for (const m of matchRows) {
-      if (m.andy_deck_id) andyPlayed.add(m.andy_deck_id);
-      if (m.kirsten_deck_id) kirstenPlayed.add(m.kirsten_deck_id);
-    }
+    const { andyPlayed, kirstenPlayed } = computePlayedDeckSets(matchRows);
 
     const assignMap = new Map<
       string,
@@ -279,29 +304,21 @@ export async function getAllDecks(): Promise<Deck[]> {
       assignMap.set(a.deck_id, arr);
     }
 
-    return decks.map((d) => {
-      const played_by: ('Andy' | 'Kirsten')[] = [];
-      if (andyPlayed.has(d.id)) played_by.push('Andy');
-      if (kirstenPlayed.has(d.id)) played_by.push('Kirsten');
-
-      return {
-        ...d,
-        parsed_cards: Array.isArray(d.parsed_cards) ? d.parsed_cards : [],
-        created_at: new Date(d.created_at).toISOString(),
-        updated_at: d.updated_at
-          ? new Date(d.updated_at).toISOString()
-          : new Date(d.created_at).toISOString(),
-        assigned_episodes: assignMap.get(d.id) || [],
-        played_by,
-      };
-    });
+    return decks.map((d) => ({
+      ...d,
+      parsed_cards: Array.isArray(d.parsed_cards) ? d.parsed_cards : [],
+      created_at: new Date(d.created_at).toISOString(),
+      updated_at: d.updated_at
+        ? new Date(d.updated_at).toISOString()
+        : new Date(d.created_at).toISOString(),
+      assigned_episodes: assignMap.get(d.id) || [],
+      played_by: getPlayedByForDeck(d.id, andyPlayed, kirstenPlayed),
+    }));
   }
 
   const db = readLocalDb();
   const epMap = new Map(db.episodes.map((e) => [e.id, e]));
-
-  const andyPlayed = new Set((db.matches || []).map((m) => m.andy_deck_id).filter(Boolean));
-  const kirstenPlayed = new Set((db.matches || []).map((m) => m.kirsten_deck_id).filter(Boolean));
+  const { andyPlayed, kirstenPlayed } = computePlayedDeckSets(db.matches || []);
 
   return db.decks
     .map((deck) => {
@@ -335,28 +352,34 @@ export async function getAllDecks(): Promise<Deck[]> {
         }
       }
 
-      const played_by: ('Andy' | 'Kirsten')[] = [];
-      if (andyPlayed.has(deck.id)) played_by.push('Andy');
-      if (kirstenPlayed.has(deck.id)) played_by.push('Kirsten');
-
       return {
         ...deck,
         assigned_episodes,
-        played_by,
+        played_by: getPlayedByForDeck(deck.id, andyPlayed, kirstenPlayed),
       };
     })
     .sort((a, b) => (b.updated_at || b.created_at).localeCompare(a.updated_at || a.created_at));
 }
 
 export async function getDecks(episodeId?: string): Promise<Deck[]> {
-  const allDecks = await getAllDecks();
-  if (!episodeId) return allDecks;
+  if (!episodeId) return getAllDecks();
 
-  return allDecks.filter(
-    (d) =>
-      d.episode_id === episodeId ||
-      d.assigned_episodes?.some((a) => a.episode_id === episodeId)
-  );
+  const [allDecks, epMatches] = await Promise.all([
+    getAllDecks(),
+    getMatches(episodeId),
+  ]);
+  const { andyPlayed, kirstenPlayed } = computePlayedDeckSets(epMatches);
+
+  return allDecks
+    .filter(
+      (d) =>
+        d.episode_id === episodeId ||
+        d.assigned_episodes?.some((a) => a.episode_id === episodeId)
+    )
+    .map((d) => ({
+      ...d,
+      played_by: getPlayedByForDeck(d.id, andyPlayed, kirstenPlayed),
+    }));
 }
 
 export async function getDeckById(id: string): Promise<Deck | null> {
@@ -399,10 +422,17 @@ export async function removeDeckFromEpisode(
 ): Promise<void> {
   if (isPostgresConfigured()) {
     await ensurePostgresInitialized();
-    await getPool().query(
-      `DELETE FROM episode_decks WHERE episode_id = $1 AND deck_id = $2`,
-      [episodeId, deckId]
-    );
+    const pool = getPool();
+    await Promise.all([
+      pool.query(
+        `DELETE FROM episode_decks WHERE episode_id = $1 AND deck_id = $2`,
+        [episodeId, deckId]
+      ),
+      pool.query(
+        `UPDATE decks SET episode_id = NULL WHERE id = $1 AND episode_id = $2`,
+        [deckId, episodeId]
+      ),
+    ]);
     return;
   }
 
@@ -416,6 +446,126 @@ export async function removeDeckFromEpisode(
     targetDeck.episode_id = null;
   }
   writeLocalDb(db);
+}
+
+/**
+ * Unassigns any decks from a finished episode (not live, not upcoming, and has recorded matches)
+ * that were never played in any match on that episode. Returns the unassigned deck IDs.
+ */
+export async function pruneUnplayedDecksFromEndedEpisode(
+  episodeId: string
+): Promise<string[]> {
+  const ep = await getEpisodeById(episodeId, { includeHidden: true });
+  if (!ep || ep.is_live || ep.is_upcoming) {
+    return [];
+  }
+
+  const epMatches = await getMatches(episodeId);
+  if (epMatches.length === 0) {
+    return [];
+  }
+
+  const playedIds = new Set<string>();
+  for (const m of epMatches) {
+    if (m.andy_deck_id) playedIds.add(m.andy_deck_id);
+    if (m.kirsten_deck_id) playedIds.add(m.kirsten_deck_id);
+  }
+  if (playedIds.size === 0) {
+    return [];
+  }
+
+  const playedArray = Array.from(playedIds);
+
+  if (isPostgresConfigured()) {
+    await ensurePostgresInitialized();
+    const pool = getPool();
+    const [delRes, updRes] = await Promise.all([
+      pool.query(
+        `DELETE FROM episode_decks
+         WHERE episode_id = $1
+           AND NOT (deck_id::text = ANY($2::text[]))
+         RETURNING deck_id`,
+        [episodeId, playedArray]
+      ),
+      pool.query(
+        `UPDATE decks
+         SET episode_id = NULL
+         WHERE episode_id = $1
+           AND NOT (id::text = ANY($2::text[]))
+         RETURNING id`,
+        [episodeId, playedArray]
+      ),
+    ]);
+    const removed = new Set<string>([
+      ...delRes.rows.map((r) => String(r.deck_id)),
+      ...updRes.rows.map((r) => String(r.id)),
+    ]);
+    return Array.from(removed);
+  }
+
+  const db = readLocalDb();
+  const removed = new Set<string>();
+  db.episode_decks = db.episode_decks.filter((ed) => {
+    if (ed.episode_id === episodeId && !playedIds.has(ed.deck_id)) {
+      removed.add(ed.deck_id);
+      return false;
+    }
+    return true;
+  });
+  for (const d of db.decks) {
+    if (d.episode_id === episodeId && !playedIds.has(d.id)) {
+      removed.add(d.id);
+      d.episode_id = null;
+    }
+  }
+  if (removed.size > 0) {
+    writeLocalDb(db);
+  }
+  return Array.from(removed);
+}
+
+export async function pruneUnplayedDecksForEndedEpisodes(): Promise<
+  { episodeId: string; removedDeckIds: string[] }[]
+> {
+  const [episodes, allMatches] = await Promise.all([
+    getEpisodes({ includeHidden: true }),
+    getMatches(),
+  ]);
+  const episodeIdsWithMatches = new Set(allMatches.map((m) => m.episode_id));
+  const results: { episodeId: string; removedDeckIds: string[] }[] = [];
+
+  for (const ep of episodes) {
+    if (!ep.is_live && !ep.is_upcoming && episodeIdsWithMatches.has(ep.id)) {
+      const removedDeckIds = await pruneUnplayedDecksFromEndedEpisode(ep.id);
+      if (removedDeckIds.length > 0) {
+        results.push({ episodeId: ep.id, removedDeckIds });
+      }
+    }
+  }
+  return results;
+}
+
+const PRUNE_ENDED_BACKFILL_KEY = 'pruned_ended_stream_decks_v1';
+let endedStreamPruneDone = false;
+let endedStreamPrunePromise: Promise<void> | null = null;
+
+async function ensureEndedStreamDecksPrunedOnce(): Promise<void> {
+  if (endedStreamPruneDone) return;
+  if (!endedStreamPrunePromise) {
+    endedStreamPrunePromise = (async () => {
+      try {
+        const alreadyDone = await getSetting(PRUNE_ENDED_BACKFILL_KEY);
+        if (alreadyDone !== 'true') {
+          await pruneUnplayedDecksForEndedEpisodes();
+          await setSetting(PRUNE_ENDED_BACKFILL_KEY, 'true');
+        }
+        endedStreamPruneDone = true;
+      } finally {
+        endedStreamPrunePromise = null;
+      }
+    })();
+  }
+  return endedStreamPrunePromise;
 }
 
 export async function createDeck(
@@ -732,6 +882,8 @@ export async function deleteMatch(id: string): Promise<boolean> {
 export async function getEnrichedEpisodes(options?: {
   includeHidden?: boolean;
 }): Promise<EnrichedEpisode[]> {
+  await ensureEndedStreamDecksPrunedOnce();
+
   const [episodes, allDecks, allMatches] = await Promise.all([
     getEpisodes(options),
     getAllDecks(),
@@ -744,20 +896,34 @@ export async function getEnrichedEpisodes(options?: {
   }
 
   return episodes.map((ep) => {
-    // Find all decks assigned to this episode
-    const epDecks = allDecks.filter(
-      (d) =>
-        d.episode_id === ep.id ||
-        d.assigned_episodes?.some((a) => a.episode_id === ep.id)
-    );
+    const epRawMatches = allMatches.filter((m) => m.episode_id === ep.id);
+    const { andyPlayed: epAndyPlayed, kirstenPlayed: epKirstenPlayed } =
+      computePlayedDeckSets(epRawMatches);
 
-    const epMatches = allMatches
-      .filter((m) => m.episode_id === ep.id)
-      .map((m) => ({
+    // Scope played_by strictly to matches played on THIS stream
+    const withEpisodePlayedBy = (d: Deck): Deck => ({
+      ...d,
+      played_by: getPlayedByForDeck(d.id, epAndyPlayed, epKirstenPlayed),
+    });
+
+    // Find all decks assigned to this episode
+    const epDecks = allDecks
+      .filter(
+        (d) =>
+          d.episode_id === ep.id ||
+          d.assigned_episodes?.some((a) => a.episode_id === ep.id)
+      )
+      .map(withEpisodePlayedBy);
+
+    const epMatches = epRawMatches.map((m) => {
+      const andyDeck = deckMap.get(m.andy_deck_id);
+      const kirstenDeck = deckMap.get(m.kirsten_deck_id);
+      return {
         ...m,
-        andy_deck: deckMap.get(m.andy_deck_id),
-        kirsten_deck: deckMap.get(m.kirsten_deck_id),
-      }));
+        andy_deck: andyDeck ? withEpisodePlayedBy(andyDeck) : undefined,
+        kirsten_deck: kirstenDeck ? withEpisodePlayedBy(kirstenDeck) : undefined,
+      };
+    });
 
     let andy_episode_wins = 0;
     let kirsten_episode_wins = 0;
@@ -861,7 +1027,19 @@ export async function createOrUpdateEpisode(
   if (isPostgresConfigured()) {
     await ensurePostgresInitialized();
     const pool = getPool();
+    let previouslyLiveIds: string[] = [];
     if (is_live) {
+      const { rows: liveRows } = await pool.query(
+        `SELECT id, is_upcoming
+         FROM episodes
+         WHERE is_live = TRUE
+           AND id != $1
+           AND ($2::text IS NULL OR youtube_video_id IS DISTINCT FROM $2)`,
+        [id, youtube_video_id]
+      );
+      previouslyLiveIds = liveRows
+        .filter((r) => !r.is_upcoming)
+        .map((r) => String(r.id));
       await pool.query(`UPDATE episodes SET is_live = FALSE WHERE id != $1`, [
         id,
       ]);
@@ -892,7 +1070,7 @@ export async function createOrUpdateEpisode(
         created_at,
       ]
     );
-    return {
+    const saved: Episode = {
       ...rows[0],
       is_upcoming: Boolean(rows[0].is_upcoming),
       is_hidden: Boolean(rows[0].is_hidden),
@@ -900,23 +1078,39 @@ export async function createOrUpdateEpisode(
       stream_date: formatDateOnly(rows[0].stream_date),
       created_at: new Date(rows[0].created_at).toISOString(),
     };
+
+    for (const prevId of previouslyLiveIds) {
+      if (prevId !== saved.id) {
+        await pruneUnplayedDecksFromEndedEpisode(prevId);
+      }
+    }
+    if (!saved.is_live && !saved.is_upcoming) {
+      await pruneUnplayedDecksFromEndedEpisode(saved.id);
+    }
+
+    return saved;
   }
 
   const db = readLocalDb();
-  if (is_live) {
-    db.episodes.forEach((e) => {
-      e.is_live = false;
-    });
-  }
-
   const existingIdx = db.episodes.findIndex(
     (e) =>
       e.id === id ||
       (youtube_video_id && e.youtube_video_id === youtube_video_id)
   );
+  const targetId = existingIdx >= 0 ? db.episodes[existingIdx].id : id;
+
+  const previouslyLiveIds: string[] = [];
+  if (is_live) {
+    db.episodes.forEach((e) => {
+      if (e.is_live && e.id !== targetId && !e.is_upcoming) {
+        previouslyLiveIds.push(e.id);
+      }
+      e.is_live = false;
+    });
+  }
 
   const epRecord: Episode = {
-    id: existingIdx >= 0 ? db.episodes[existingIdx].id : id,
+    id: targetId,
     youtube_video_id,
     title,
     episode_number:
@@ -942,6 +1136,14 @@ export async function createOrUpdateEpisode(
     db.episodes.unshift(epRecord);
   }
   writeLocalDb(db);
+
+  for (const prevId of previouslyLiveIds) {
+    await pruneUnplayedDecksFromEndedEpisode(prevId);
+  }
+  if (!epRecord.is_live && !epRecord.is_upcoming) {
+    await pruneUnplayedDecksFromEndedEpisode(epRecord.id);
+  }
+
   return epRecord;
 }
 
@@ -968,6 +1170,9 @@ export async function updateEpisode(
       cleanUpdates[key] = val;
     }
   }
+  if (cleanUpdates.is_live === true && cleanUpdates.is_upcoming === undefined) {
+    cleanUpdates.is_upcoming = false;
+  }
 
   if (isPostgresConfigured()) {
     await ensurePostgresInitialized();
@@ -978,7 +1183,15 @@ export async function updateEpisode(
     );
     if (!existing[0]) return null;
     const merged = { ...existing[0], ...cleanUpdates };
+    let previouslyLiveIds: string[] = [];
     if (cleanUpdates.is_live) {
+      const { rows: liveRows } = await pool.query(
+        `SELECT id, is_upcoming FROM episodes WHERE is_live = TRUE AND id != $1`,
+        [id]
+      );
+      previouslyLiveIds = liveRows
+        .filter((r) => !r.is_upcoming)
+        .map((r) => String(r.id));
       await pool.query(`UPDATE episodes SET is_live = FALSE WHERE id != $1`, [
         id,
       ]);
@@ -1010,7 +1223,7 @@ export async function updateEpisode(
       ]
     );
     if (!rows[0]) return null;
-    return {
+    const updated: Episode = {
       ...rows[0],
       is_upcoming: Boolean(rows[0].is_upcoming),
       is_hidden: Boolean(rows[0].is_hidden),
@@ -1018,13 +1231,26 @@ export async function updateEpisode(
       stream_date: formatDateOnly(rows[0].stream_date),
       created_at: new Date(rows[0].created_at).toISOString(),
     };
+
+    for (const prevId of previouslyLiveIds) {
+      await pruneUnplayedDecksFromEndedEpisode(prevId);
+    }
+    if (!updated.is_live && !updated.is_upcoming) {
+      await pruneUnplayedDecksFromEndedEpisode(updated.id);
+    }
+
+    return updated;
   }
 
   const db = readLocalDb();
   const idx = db.episodes.findIndex((e) => e.id === id);
   if (idx < 0) return null;
+  const previouslyLiveIds: string[] = [];
   if (cleanUpdates.is_live) {
     db.episodes.forEach((e) => {
+      if (e.is_live && e.id !== id && !e.is_upcoming) {
+        previouslyLiveIds.push(e.id);
+      }
       e.is_live = false;
     });
   }
@@ -1033,14 +1259,30 @@ export async function updateEpisode(
     ...cleanUpdates,
   };
   writeLocalDb(db);
-  return db.episodes[idx];
+
+  for (const prevId of previouslyLiveIds) {
+    await pruneUnplayedDecksFromEndedEpisode(prevId);
+  }
+  const updated = db.episodes[idx];
+  if (!updated.is_live && !updated.is_upcoming) {
+    await pruneUnplayedDecksFromEndedEpisode(updated.id);
+  }
+
+  return updated;
 }
 
 export async function setEpisodeLiveStatus(
   episodeId: string,
   isLive: boolean
 ): Promise<Episode | null> {
-  return updateEpisode(episodeId, { is_live: isLive });
+  if (isLive) {
+    return updateEpisode(episodeId, { is_live: true, is_upcoming: false });
+  }
+  const existing = await getEpisodeById(episodeId, { includeHidden: true });
+  if (existing?.is_live) {
+    return updateEpisode(episodeId, { is_live: false, is_upcoming: false });
+  }
+  return updateEpisode(episodeId, { is_live: false });
 }
 
 // =============================================================================

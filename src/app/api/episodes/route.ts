@@ -113,6 +113,7 @@ export async function PATCH(req: NextRequest) {
         Boolean(body.isLive)
       );
       broadcastRealtimeEvent('episode_live_toggled', { episodeId, isLive: Boolean(body.isLive), episode: updated });
+      broadcastRealtimeEvent('episode_updated', { episode: updated });
       return NextResponse.json({ episode: updated });
     }
 

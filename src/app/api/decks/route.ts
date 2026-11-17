@@ -6,6 +6,7 @@ import {
   deleteDeck,
   getAllDecks,
   getDecks,
+  pruneUnplayedDecksFromEndedEpisode,
   removeDeckFromEpisode,
   updateDeck,
 } from '@/lib/db';
@@ -66,6 +67,25 @@ export async function POST(req: NextRequest) {
       await removeDeckFromEpisode(episodeId, deckId);
       broadcastRealtimeEvent('deck_unassigned', { episodeId, deckId });
       return NextResponse.json({ unassigned: true, episode_id: episodeId, deck_id: deckId });
+    }
+
+    if (body.action === 'prune_unplayed') {
+      const episodeId = String(body.episode_id || body.episodeId || '');
+      if (!episodeId) {
+        return NextResponse.json(
+          { error: 'episode_id is required to prune unplayed decks' },
+          { status: 400 }
+        );
+      }
+      const removedDeckIds = await pruneUnplayedDecksFromEndedEpisode(episodeId);
+      if (removedDeckIds.length > 0) {
+        broadcastRealtimeEvent('deck_unassigned', { episodeId, removedDeckIds });
+      }
+      return NextResponse.json({
+        pruned: true,
+        episode_id: episodeId,
+        removed_deck_ids: removedDeckIds,
+      });
     }
 
     const deck_name = String(body.deck_name || '').trim();

@@ -139,7 +139,7 @@ export function extractSetFromTitle(title: string): string {
 }
 
 /**
- * Format who played this deck on streams. Returns null if not played on any stream.
+ * Format who played this deck on a stream. Returns null if not played on the stream.
  */
 export function formatPlayedBy(deck?: {
   played_by?: ('Andy' | 'Kirsten')[] | null;
@@ -157,7 +157,12 @@ export function formatPlayedBy(deck?: {
       return 'Played by Kirsten';
     }
   }
-  // Fallback to legacy pilot if explicitly assigned
+  // When played_by is explicitly provided as an array (including []),
+  // never fall back to the legacy deck-level pilot field.
+  if (Array.isArray(deck.played_by)) {
+    return null;
+  }
+  // Fallback to legacy pilot only when played_by was not supplied
   if (deck.pilot && deck.pilot !== 'Unassigned') {
     return `Played by ${deck.pilot}`;
   }

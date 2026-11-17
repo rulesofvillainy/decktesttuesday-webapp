@@ -58,7 +58,8 @@ export function LiveStreamHero({ episode, status }: LiveStreamHeroProps) {
       event.type === 'deck_unassigned' ||
       event.type === 'deck_created' ||
       event.type === 'deck_updated' ||
-      event.type === 'episode_updated'
+      event.type === 'episode_updated' ||
+      event.type === 'episode_live_toggled'
     ) {
       refreshFeatured();
     }

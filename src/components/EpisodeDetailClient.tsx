@@ -39,7 +39,8 @@ export function EpisodeDetailClient({ initialEpisode }: EpisodeDetailClientProps
       event.type === 'deck_unassigned' ||
       event.type === 'deck_created' ||
       event.type === 'deck_updated' ||
-      event.type === 'episode_updated'
+      event.type === 'episode_updated' ||
+      event.type === 'episode_live_toggled'
     ) {
       fetchFreshData();
     }

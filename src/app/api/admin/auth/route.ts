@@ -6,6 +6,18 @@ import {
   verifyAdminPassword,
 } from '@/lib/auth';
 
+function isHttpsRequest(req: NextRequest): boolean {
+  const forwardedProto = req.headers
+    .get('x-forwarded-proto')
+    ?.split(',')[0]
+    ?.trim()
+    .toLowerCase();
+  if (forwardedProto) {
+    return forwardedProto === 'https';
+  }
+  return req.nextUrl.protocol === 'https:';
+}
+
 export async function GET() {
   const authenticated = await isAdminAuthenticated();
   return NextResponse.json({ authenticated });
@@ -31,7 +43,9 @@ export async function POST(req: NextRequest) {
 
     res.cookies.set(ADMIN_COOKIE_NAME, token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      // Only mark Secure when the request itself arrived over HTTPS (direct or via proxy),
+      // so production HTTP access (e.g. IP/LAN before TLS setup) still persists the session cookie.
+      secure: isHttpsRequest(req),
       sameSite: 'lax',
       path: '/',
       maxAge: 60 * 60 * 24 * 7, // 7 days
@@ -46,8 +60,14 @@ export async function POST(req: NextRequest) {
   }
 }
 
-export async function DELETE() {
+export async function DELETE(req: NextRequest) {
   const res = NextResponse.json({ authenticated: false });
-  res.cookies.delete(ADMIN_COOKIE_NAME);
+  res.cookies.set(ADMIN_COOKIE_NAME, '', {
+    httpOnly: true,
+    secure: isHttpsRequest(req),
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 0,
+  });
   return res;
 }

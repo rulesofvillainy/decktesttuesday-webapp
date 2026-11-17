@@ -443,6 +443,7 @@ export function MobileControllerClient({
   const handleToggleLiveStatus = async () => {
     if (!activeEpisode) return;
     const nextLive = !activeEpisode.is_live;
+    const prevDeckCount = activeEpisode.decks.length;
     const res = await fetch('/api/episodes', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -453,8 +454,31 @@ export function MobileControllerClient({
         prev.map((ep) => ({
           ...ep,
           is_live: ep.id === activeEpisode.id ? nextLive : false,
+          is_upcoming: ep.id === activeEpisode.id ? false : ep.is_upcoming,
         }))
       );
+      if (!nextLive) {
+        const epRes = await fetch('/api/episodes?includeHidden=true');
+        if (epRes.ok) {
+          const epData = await epRes.json();
+          if (Array.isArray(epData.episodes)) {
+            setEpisodes(epData.episodes);
+            const updatedEp = epData.episodes.find(
+              (e: EnrichedEpisode) => e.id === activeEpisode.id
+            );
+            const removedCount = updatedEp
+              ? Math.max(0, prevDeckCount - updatedEp.decks.length)
+              : 0;
+            showToast(
+              removedCount > 0
+                ? `● Stream is now OFF-AIR. Unassigned ${removedCount} unplayed deck(s).`
+                : '● Stream is now OFF-AIR.'
+            );
+            router.refresh();
+            return;
+          }
+        }
+      }
       showToast(nextLive ? '● Stream is now LIVE!' : '● Stream is now OFF-AIR.');
       router.refresh();
     }
