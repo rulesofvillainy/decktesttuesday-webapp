@@ -1,0 +1,547 @@
+{
+  "episodes": [
+    {
+      "id": "63513406-6e56-4ecd-b522-381c1de54ab2",
+      "youtube_video_id": "3RicygDjr9Y",
+      "title": "Deck Test Tuesday - Hyperia City [Week 3] - Detecting a New Trend in the Meta",
+      "episode_number": 68,
+      "stream_date": "2026-11-04",
+      "vod_url": "https://www.youtube.com/watch?v=3RicygDjr9Y",
+      "is_live": false,
+      "is_upcoming": false,
+      "is_hidden": false,
+      "set_name": "Hyperia City",
+      "format_tag": "Core",
+      "created_at": "2026-11-04T18:00:00Z"
+    },
+    {
+      "id": "d03d76d2-f2e6-4bb9-a24d-478649a6bd06",
+      "youtube_video_id": "ZHyBOLMHXoU",
+      "title": "Deck Test Tuesday - Hyperia City [Week 2] - Take Me Down To Hyperia City",
+      "episode_number": 67,
+      "stream_date": "2026-10-28",
+      "vod_url": "https://www.youtube.com/watch?v=ZHyBOLMHXoU",
+      "is_live": false,
+      "is_upcoming": false,
+      "is_hidden": false,
+      "set_name": "Hyperia City",
+      "format_tag": "Core",
+      "created_at": "2026-10-28T18:00:00Z"
+    },
+    {
+      "id": "c8be64b8-2350-4568-a5ce-d5e6d5a3b8e5",
+      "youtube_video_id": "Tau_hkmpLW0",
+      "title": "Deck Test Tuesday - Hyperia City [Week 1] - Sealed Showdown",
+      "episode_number": 66,
+      "stream_date": "2026-10-21",
+      "vod_url": "https://www.youtube.com/watch?v=Tau_hkmpLW0",
+      "is_live": false,
+      "is_upcoming": false,
+      "is_hidden": false,
+      "set_name": "Hyperia City",
+      "format_tag": "Limited",
+      "created_at": "2026-10-21T18:00:00Z"
+    }
+  ],
+  "cards_cache": [],
+  "decks": [
+    {
+      "id": "3cd27695-a392-4b45-af63-ad743f15a9e7",
+      "episode_id": null,
+      "pilot": "Unassigned",
+      "deck_name": "Amber Amethyst Ink Drops",
+      "ink_one": "Amber",
+      "ink_two": "Amethyst",
+      "deck_link": null,
+      "notes": null,
+      "raw_decklist": "4 Mickey Mouse - Best in Town\n4 Will o' the Wisp - Forest Spirit\n4 Pepita - Watchful Alebrije\n3 Junior Woodchuck Guidebook\n4 Merlin's Shop and Smithy - Magical Market\n2 Mowgli - Man Cub\n3 Demona - Imperious Spellcaster\n4 Elsa - Exploring the Unknown\n1 Owen Burnett - Xanatos's Assistant\n4 Archimedes - Messenger Owl\n4 Merlin - Profoundly Curious\n1 Genie - Supportive Friend\n1 Demona - Betrayer of the Clan\n4 Hades - Looking for a Deal\n2 Demona - Scourge of the Wyvern Clan\n2 Lionheart - Incumbent Mayor\n4 Raging Storm\n1 Elsa - Spirit of Winter\n3 Christopher Robin - Joining the Fun\n2 The Horseman Strikes!\n2 Cheshire Cat - Inexplicable\n3 Dale - Ready for His Shot",
+      "parsed_cards": [
+        {
+          "ink": "Amber",
+          "cost": 1,
+          "name": "Mickey Mouse",
+          "type": "Character",
+          "count": 4,
+          "card_id": "crd_1ddaca55bb4f46acae8b17edfea186ac",
+          "inkwell": true,
+          "version": "Best in Town",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_1ddaca55bb4f46acae8b17edfea186ac.avif?1790278519"
+        },
+        {
+          "ink": "Amethyst",
+          "cost": 1,
+          "name": "Will o' the Wisp",
+          "type": "Character",
+          "count": 4,
+          "card_id": "crd_4d61ccc401a942719bfcafde3a132578",
+          "inkwell": true,
+          "version": "Forest Spirit",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_4d61ccc401a942719bfcafde3a132578.avif?1777687337"
+        },
+        {
+          "ink": "Amethyst",
+          "cost": 2,
+          "name": "Christopher Robin",
+          "type": "Character",
+          "count": 3,
+          "card_id": "crd_6ef0db16a9b944d29c9a18fb37a8916d",
+          "inkwell": true,
+          "version": "Joining the Fun",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_6ef0db16a9b944d29c9a18fb37a8916d.avif?1770259447"
+        },
+        {
+          "ink": "Amethyst",
+          "cost": 2,
+          "name": "Junior Woodchuck Guidebook",
+          "type": "Item",
+          "count": 3,
+          "card_id": "crd_531cdf5a74f047b29e6129e583b12aa3",
+          "inkwell": true,
+          "version": "",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_531cdf5a74f047b29e6129e583b12aa3.avif?1761752270"
+        },
+        {
+          "ink": "Amethyst",
+          "cost": 2,
+          "name": "Merlin's Shop and Smithy",
+          "type": "Location",
+          "count": 4,
+          "card_id": "crd_ac48e83f0cec4636ae8d4db35632ba27",
+          "inkwell": true,
+          "version": "Magical Markey",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_ac48e83f0cec4636ae8d4db35632ba27.avif?1790872739"
+        },
+        {
+          "ink": "Amber",
+          "cost": 2,
+          "name": "Mowgli",
+          "type": "Character",
+          "count": 2,
+          "card_id": "crd_8cb497be95844e9ba41be7ed0e6aa2e2",
+          "inkwell": true,
+          "version": "Man Cub",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_8cb497be95844e9ba41be7ed0e6aa2e2.avif?1761752015"
+        },
+        {
+          "ink": "Amethyst",
+          "cost": 2,
+          "name": "Pepita",
+          "type": "Character",
+          "count": 4,
+          "card_id": "crd_8d159b7fdf5c4a19afe33b04a035bfb6",
+          "inkwell": true,
+          "version": "Watchful Alebrije",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_8d159b7fdf5c4a19afe33b04a035bfb6.avif?1790870754"
+        },
+        {
+          "ink": "Amethyst",
+          "cost": 3,
+          "name": "Archimedes",
+          "type": "Character",
+          "count": 4,
+          "card_id": "crd_4012002528b34eadbcf056855a3e1412",
+          "inkwell": false,
+          "version": "Messenger Owl",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_4012002528b34eadbcf056855a3e1412.avif?1790278550"
+        },
+        {
+          "ink": "Amethyst",
+          "cost": 3,
+          "name": "Cheshire Cat",
+          "type": "Character",
+          "count": 2,
+          "card_id": "crd_19c39ba1fb674390bbb747f8cdcaa9c3",
+          "inkwell": true,
+          "version": "Inexplicable",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_19c39ba1fb674390bbb747f8cdcaa9c3.avif?1761752209"
+        },
+        {
+          "ink": "Amethyst",
+          "cost": 3,
+          "name": "Demona",
+          "type": "Character",
+          "count": 3,
+          "card_id": "crd_6f1045b525e1410d8b86572ee368510b",
+          "inkwell": true,
+          "version": "Imperious Spellcaster",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_6f1045b525e1410d8b86572ee368510b.avif?1790871982"
+        },
+        {
+          "ink": "Amethyst",
+          "cost": 3,
+          "name": "Elsa",
+          "type": "Character",
+          "count": 4,
+          "card_id": "crd_df577add2294407d8594959234177041",
+          "inkwell": true,
+          "version": "Exploring the Unknown",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_df577add2294407d8594959234177041.avif?1761752140"
+        },
+        {
+          "ink": "Amethyst",
+          "cost": 3,
+          "name": "Owen Burnett",
+          "type": "Character",
+          "count": 1,
+          "card_id": "crd_cafb43eabd50438f9248ff55a7dd8850",
+          "inkwell": true,
+          "version": "Xanatos's Assistant",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_cafb43eabd50438f9248ff55a7dd8850.avif?1790278531"
+        },
+        {
+          "ink": "Amber",
+          "cost": 3,
+          "name": "The Horseman Strikes!",
+          "type": "Action",
+          "count": 2,
+          "card_id": "crd_47696b283a634a63be19e785284804a6",
+          "inkwell": true,
+          "version": "",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_47696b283a634a63be19e785284804a6.avif?1761752063"
+        },
+        {
+          "ink": "Amber",
+          "cost": 4,
+          "name": "Dale",
+          "type": "Character",
+          "count": 3,
+          "card_id": "crd_66a5c1d3ac3e4e2c894c5a8604c10cc2",
+          "inkwell": true,
+          "version": "Ready for His Shot",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_66a5c1d3ac3e4e2c894c5a8604c10cc2.avif?1777687217"
+        },
+        {
+          "ink": "Amethyst",
+          "cost": 4,
+          "name": "Demona",
+          "type": "Character",
+          "count": 1,
+          "card_id": "crd_35f7836ceed84e21ba7cfdde813d73bc",
+          "inkwell": true,
+          "version": "Betrayer of the Clan",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_35f7836ceed84e21ba7cfdde813d73bc.avif?1761752117"
+        },
+        {
+          "ink": "Amethyst",
+          "cost": 4,
+          "name": "Genie",
+          "type": "Character",
+          "count": 1,
+          "card_id": "crd_777ef1df73214a63a89bce29396afefa",
+          "inkwell": false,
+          "version": "Supportive Friend",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_777ef1df73214a63a89bce29396afefa.avif?1755540446"
+        },
+        {
+          "ink": "Amethyst",
+          "cost": 4,
+          "name": "Merlin",
+          "type": "Character",
+          "count": 4,
+          "card_id": "crd_79da2a3a7584444e8d0b85d4ebf18a6f",
+          "inkwell": false,
+          "version": "Profoundly Curious",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_79da2a3a7584444e8d0b85d4ebf18a6f.avif?1790872113"
+        },
+        {
+          "ink": "Amethyst",
+          "cost": 5,
+          "name": "Hades",
+          "type": "Character",
+          "count": 4,
+          "card_id": "crd_d4514592d27b40cca5821f510aea2db2",
+          "inkwell": true,
+          "version": "Looking for a Deal",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_d4514592d27b40cca5821f510aea2db2.avif?1761752189"
+        },
+        {
+          "ink": "Amethyst",
+          "cost": 6,
+          "name": "Demona",
+          "type": "Character",
+          "count": 2,
+          "card_id": "crd_a6116dcba33643b9a31897960a2267f1",
+          "inkwell": true,
+          "version": "Scourge of the Wyvern Clan",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_a6116dcba33643b9a31897960a2267f1.avif?1761752185"
+        },
+        {
+          "ink": "Amber",
+          "cost": 6,
+          "name": "Lionheart",
+          "type": "Character",
+          "count": 2,
+          "card_id": "crd_7cedada74484495e959d935b6a17b138",
+          "inkwell": true,
+          "version": "Incumbent Mayor",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_7cedada74484495e959d935b6a17b138.avif?1790278511"
+        },
+        {
+          "ink": "Amethyst",
+          "cost": 8,
+          "name": "Elsa",
+          "type": "Character",
+          "count": 1,
+          "card_id": "crd_096f0a6be34a4134aaa682c768cceeec",
+          "inkwell": false,
+          "version": "Spirit of Winter",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_096f0a6be34a4134aaa682c768cceeec.avif?1755741240"
+        },
+        {
+          "ink": "Amber",
+          "cost": 8,
+          "name": "Raging Storm",
+          "type": "Action",
+          "count": 4,
+          "card_id": "crd_46ccfcbf96124424a2467f7f13a2f0c5",
+          "inkwell": false,
+          "version": "",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_46ccfcbf96124424a2467f7f13a2f0c5.avif?1770259325"
+        }
+      ],
+      "created_at": "2026-11-06T19:36:24.478Z",
+      "updated_at": "2026-11-06T19:36:24.478Z",
+      "built_by": "Andy"
+    },
+    {
+      "id": "53077555-c009-4ee3-bea9-5bd918d37a16",
+      "episode_id": null,
+      "pilot": "Unassigned",
+      "deck_name": "Detectives",
+      "ink_one": "Amber",
+      "ink_two": "Sapphire",
+      "deck_link": "https://dreamborn.ink/decks/pTQUfUUBp9zguSKPtdDV",
+      "notes": null,
+      "raw_decklist": "4 Judy Hopps - Helpful Officer\n4 Higgins - Undercover Officer\n2 Eilonwy - Princess of Llyr\n1 Mowgli - Man Cub\n2 Daisy Duck - Ghost Finder\n3 Darkwing Duck - Drake Mallard\n2 Nick Wilde - Providing Backup\n2 Nick Wilde - Providing Backup\n4 Judy Hopps - Day Camp Instructor\n4 Judy Hopps - On the Case\n1 The Horseman Strikes!\n4 Judy Hopps - Uncovering Clues\n4 Nick Wilde - Toy Drive Officer\n4 Elisa Maza - Hardworking Detective\n4 Judy Hopps - Always Vigilant\n4 Gaston - Superior Archer\n4 Fangmeyer - Icy Officer\n4 Judy Hopps - Lead Detective\n2 Nick Wilde - Inquisitive Harbormaster\n2 Besties, Assemble!",
+      "parsed_cards": [
+        {
+          "ink": "Amber",
+          "cost": 1,
+          "name": "Besties, Assemble!",
+          "type": "Action",
+          "count": 2,
+          "card_id": "crd_d4497d30198144bd817e8dc4a8250c19",
+          "inkwell": true,
+          "version": "",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_d4497d30198144bd817e8dc4a8250c19.avif?1783188554"
+        },
+        {
+          "ink": "Amber",
+          "cost": 1,
+          "name": "Eilonwy",
+          "type": "Character",
+          "count": 2,
+          "card_id": "crd_495426e5c16b4039977439b3c7a9b9e2",
+          "inkwell": true,
+          "version": "Princess of Llyr",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_495426e5c16b4039977439b3c7a9b9e2.avif?1761751958"
+        },
+        {
+          "ink": "Amber",
+          "cost": 1,
+          "name": "Higgins",
+          "type": "Character",
+          "count": 4,
+          "card_id": "crd_0511a324cc744453bb56c0d34d8f8d2a",
+          "inkwell": true,
+          "version": "Undercover Officer",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_0511a324cc744453bb56c0d34d8f8d2a.avif?1761751951"
+        },
+        {
+          "ink": "Amber",
+          "cost": 1,
+          "name": "Judy Hopps",
+          "type": "Character",
+          "count": 4,
+          "card_id": "crd_a20ade77fd92426eacb8dbf72861a997",
+          "inkwell": true,
+          "version": "Helpful Officer",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_a20ade77fd92426eacb8dbf72861a997.avif?1790792826"
+        },
+        {
+          "ink": "Sapphire",
+          "cost": 2,
+          "name": "Daisy Duck",
+          "type": "Character",
+          "count": 2,
+          "card_id": "crd_9193681ad61242069ba2fe957ca8cb8d",
+          "inkwell": true,
+          "version": "Ghost Finder",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_9193681ad61242069ba2fe957ca8cb8d.avif?1761764368"
+        },
+        {
+          "ink": "Sapphire",
+          "cost": 2,
+          "name": "Darkwing Duck",
+          "type": "Character",
+          "count": 3,
+          "card_id": "crd_39abc3bfefc14489beca55a40a48153c",
+          "inkwell": true,
+          "version": "Drake Mallard",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_39abc3bfefc14489beca55a40a48153c.avif?1770259853"
+        },
+        {
+          "ink": "Sapphire",
+          "cost": 2,
+          "name": "Judy Hopps",
+          "type": "Character",
+          "count": 4,
+          "card_id": "crd_c88e409716e8466b8850451676e23c0c",
+          "inkwell": false,
+          "version": "Day Camp Instructor",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_c88e409716e8466b8850451676e23c0c.avif?1790278637"
+        },
+        {
+          "ink": "Amber",
+          "cost": 2,
+          "name": "Mowgli",
+          "type": "Character",
+          "count": 1,
+          "card_id": "crd_8cb497be95844e9ba41be7ed0e6aa2e2",
+          "inkwell": true,
+          "version": "Man Cub",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_8cb497be95844e9ba41be7ed0e6aa2e2.avif?1761752015"
+        },
+        {
+          "ink": "Amber",
+          "cost": 2,
+          "name": "Nick Wilde",
+          "type": "Character",
+          "count": 4,
+          "card_id": "crd_0777949fd088446fb7fea975ea0657cd",
+          "inkwell": true,
+          "version": "Providing Backup",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_0777949fd088446fb7fea975ea0657cd.avif?1790278524"
+        },
+        {
+          "ink": "Sapphire",
+          "cost": 3,
+          "name": "Judy Hopps",
+          "type": "Character",
+          "count": 4,
+          "card_id": "crd_23a4b454b25c4c2f98c8e42664bc2394",
+          "inkwell": true,
+          "version": "On the Case",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_23a4b454b25c4c2f98c8e42664bc2394.avif?1761764351"
+        },
+        {
+          "ink": "Amber",
+          "cost": 3,
+          "name": "The Horseman Strikes!",
+          "type": "Action",
+          "count": 1,
+          "card_id": "crd_47696b283a634a63be19e785284804a6",
+          "inkwell": true,
+          "version": "",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_47696b283a634a63be19e785284804a6.avif?1761752063"
+        },
+        {
+          "ink": "Amber",
+          "cost": 4,
+          "name": "Elisa Maza",
+          "type": "Character",
+          "count": 4,
+          "card_id": "crd_816b5cef943b4639a101f20c79b654f4",
+          "inkwell": true,
+          "version": "Hardworking Detective",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_816b5cef943b4639a101f20c79b654f4.avif?1790442538"
+        },
+        {
+          "ink": "Sapphire",
+          "cost": 4,
+          "name": "Judy Hopps",
+          "type": "Character",
+          "count": 4,
+          "card_id": "crd_977a785a450a4621b0dcff4404592877",
+          "inkwell": true,
+          "version": "Uncovering Clues",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_977a785a450a4621b0dcff4404592877.avif?1761764552"
+        },
+        {
+          "ink": "Amber",
+          "cost": 4,
+          "name": "Judy Hopps",
+          "type": "Character",
+          "count": 4,
+          "card_id": "crd_c0ecc42e2ece4bf393944a85ac0a8763",
+          "inkwell": true,
+          "version": "Always Vigilant",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_c0ecc42e2ece4bf393944a85ac0a8763.avif?1790792829"
+        },
+        {
+          "ink": "Amber",
+          "cost": 4,
+          "name": "Nick Wilde",
+          "type": "Character",
+          "count": 4,
+          "card_id": "crd_0050687e0cc045c3b51985a3a54cb945",
+          "inkwell": false,
+          "version": "Toy Drive Officer",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_0050687e0cc045c3b51985a3a54cb945.avif?1790869213"
+        },
+        {
+          "ink": "Amber",
+          "cost": 5,
+          "name": "Fangmeyer",
+          "type": "Character",
+          "count": 4,
+          "card_id": "crd_f3392db6475445bbb5ad6f608dc86c4b",
+          "inkwell": false,
+          "version": "Icy Officer",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_f3392db6475445bbb5ad6f608dc86c4b.avif?1770259243"
+        },
+        {
+          "ink": "Amber",
+          "cost": 5,
+          "name": "Gaston",
+          "type": "Character",
+          "count": 4,
+          "card_id": "crd_ea561561e96748fdab5fcca6c4f6766a",
+          "inkwell": true,
+          "version": "Superior Archer",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_ea561561e96748fdab5fcca6c4f6766a.avif?1783188460"
+        },
+        {
+          "ink": "Sapphire",
+          "cost": 6,
+          "name": "Judy Hopps",
+          "type": "Character",
+          "count": 4,
+          "card_id": "crd_8b5e1f11dda44f6890e67ab6f2d065b5",
+          "inkwell": true,
+          "version": "Lead Detective",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_8b5e1f11dda44f6890e67ab6f2d065b5.avif?1761764484"
+        },
+        {
+          "ink": "Amber",
+          "cost": 6,
+          "name": "Nick Wilde",
+          "type": "Character",
+          "count": 2,
+          "card_id": "crd_44606b91eae5430e9ee3290986734dbd",
+          "inkwell": true,
+          "version": "Inquisitive Harbormaster",
+          "image_url": "https://cards.lorcast.io/card/digital/normal/crd_44606b91eae5430e9ee3290986734dbd.avif?1790278496"
+        }
+      ],
+      "created_at": "2026-11-06T19:38:49.931Z",
+      "updated_at": "2026-11-06T19:39:07.887Z",
+      "built_by": "Kirsten"
+    }
+  ],
+  "episode_decks": [
+    {
+      "episode_id": "63513406-6e56-4ecd-b522-381c1de54ab2",
+      "deck_id": "3cd27695-a392-4b45-af63-ad743f15a9e7",
+      "assigned_at": "2026-11-06T19:37:51.114Z"
+    },
+    {
+      "episode_id": "63513406-6e56-4ecd-b522-381c1de54ab2",
+      "deck_id": "53077555-c009-4ee3-bea9-5bd918d37a16",
+      "assigned_at": "2026-11-06T19:39:22.075Z"
+    }
+  ],
+  "matches": [],
+  "deck_submissions": [],
+  "excluded_youtube_streams": []
+}

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Deck Test Controller</string>
+    <string name="title_connect">Contestant Connect</string>
+    <string name="hint_host">Server Host / IP (e.g. 192.168.1.195)</string>
+    <string name="hint_port">Port (e.g. 3000)</string>
+    <string name="hint_episode">Episode ID (e.g. ep-1)</string>
+    <string name="hint_name">Contestant Name</string>
+    <string name="btn_connect">Join Episode &amp; Connect</string>
+    <string name="btn_disconnect">Disconnect</string>
+    <string name="buzzer_locked">🔒 BUZZER LOCKED</string>
+    <string name="buzzer_open">🚨 BUZZ IN NOW! 🚨</string>
+    <string name="buzzer_first">🌟 YOU BUZZED IN FIRST! 🌟</string>
+    <string name="buzzer_queued">QUEUED</string>
+    <string name="buzzer_locked_out">🚫 LOCKED OUT</string>
+</resources>

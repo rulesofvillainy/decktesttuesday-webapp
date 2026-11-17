@@ -1,0 +1,642 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#160D24">
+
+    <!-- ================================================================= -->
+    <!-- VIEW 1: CONNECT TO DECK TEST TUESDAY APP -->
+    <!-- ================================================================= -->
+    <ScrollView
+        android:id="@+id/view_connect"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="24dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:maxWidth="460dp"
+                android:background="@drawable/brutal_card"
+                android:orientation="vertical"
+                android:padding="24dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="6dp"
+                    android:letterSpacing="0.08"
+                    android:text="⚔️ DECK TEST TUESDAY"
+                    android:textColor="#00F5D4"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="4dp"
+                    android:text="Game Controller"
+                    android:textColor="#F4F4F6"
+                    android:textSize="26sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tv_connect_status"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="24dp"
+                    android:text="Enter Web App URL &amp; Port to connect"
+                    android:textColor="#FFB703"
+                    android:textSize="13sp" />
+
+                <!-- Server Host / IP -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="6dp"
+                    android:text="Web App Host / IP:"
+                    android:textColor="#00F5D4"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+
+                <EditText
+                    android:id="@+id/et_host"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="16dp"
+                    android:background="@drawable/brutal_input"
+                    android:hint="e.g. 192.168.1.195"
+                    android:singleLine="true"
+                    android:text="192.168.1.195"
+                    android:textColor="#F4F4F6"
+                    android:textColorHint="#6B7280"
+                    android:textSize="15sp" />
+
+                <!-- Port -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="6dp"
+                    android:text="Port:"
+                    android:textColor="#00F5D4"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+
+                <EditText
+                    android:id="@+id/et_port"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="16dp"
+                    android:background="@drawable/brutal_input"
+                    android:inputType="number"
+                    android:singleLine="true"
+                    android:text="3000"
+                    android:textColor="#F4F4F6"
+                    android:textSize="15sp" />
+
+                <!-- Admin Password -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="6dp"
+                    android:text="Admin Password:"
+                    android:textColor="#00F5D4"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+
+                <EditText
+                    android:id="@+id/et_password"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="24dp"
+                    android:background="@drawable/brutal_input"
+                    android:inputType="textPassword"
+                    android:singleLine="true"
+                    android:text="villainy"
+                    android:textColor="#F4F4F6"
+                    android:textSize="15sp" />
+
+                <!-- Connect Button -->
+                <Button
+                    android:id="@+id/btn_connect"
+                    android:layout_width="match_parent"
+                    android:layout_height="56dp"
+                    android:background="@drawable/brutal_btn_teal"
+                    android:letterSpacing="0.04"
+                    android:text="CONNECT CONTROLLER"
+                    android:textColor="#000000"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+
+    <!-- ================================================================= -->
+    <!-- VIEW 2: GAME CONTROLLER ARENA -->
+    <!-- ================================================================= -->
+    <ScrollView
+        android:id="@+id/view_controller"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fillViewport="true"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <!-- 1. TOP HEADER & STREAM STATUS -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="14dp"
+                android:background="@drawable/brutal_card"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="12dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btn_toggle_live"
+                        android:layout_width="wrap_content"
+                        android:layout_height="40dp"
+                        android:background="@drawable/brutal_btn_dark"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
+                        android:text="● OFF-AIR"
+                        android:textColor="#9CA3AF"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <View
+                        android:layout_width="0dp"
+                        android:layout_height="1dp"
+                        android:layout_weight="1" />
+
+                    <Button
+                        android:id="@+id/btn_refresh"
+                        android:layout_width="wrap_content"
+                        android:layout_height="40dp"
+                        android:layout_marginEnd="8dp"
+                        android:background="@drawable/brutal_btn_teal"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
+                        android:text="↻ REFRESH"
+                        android:textColor="#000000"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+
+                    <Button
+                        android:id="@+id/btn_disconnect"
+                        android:layout_width="wrap_content"
+                        android:layout_height="40dp"
+                        android:background="@drawable/brutal_btn_amber"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
+                        android:text="DISCONNECT"
+                        android:textColor="#000000"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="4dp"
+                    android:text="ACTIVE STREAM:"
+                    android:textColor="#00F5D4"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <Spinner
+                    android:id="@+id/sp_episodes"
+                    android:layout_width="match_parent"
+                    android:layout_height="52dp"
+                    android:minHeight="52dp"
+                    android:gravity="center_vertical"
+                    android:popupBackground="#1F1133"
+                    android:background="@drawable/brutal_spinner_bg" />
+            </LinearLayout>
+
+            <!-- Toast Banner -->
+            <TextView
+                android:id="@+id/tv_toast"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="14dp"
+                android:background="@drawable/brutal_btn_teal"
+                android:padding="12dp"
+                android:text="Match ready."
+                android:textColor="#000000"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
+            <!-- 2. MATCH SETUP CARD -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="14dp"
+                android:background="@drawable/brutal_card"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="10dp"
+                    android:text="⚔️ MATCH SETUP"
+                    android:textColor="#F4F4F6"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <!-- Andy Deck -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="10dp"
+                    android:background="@drawable/brutal_btn_purple"
+                    android:orientation="vertical"
+                    android:padding="12dp">
+
+                    <TextView
+                        android:id="@+id/tv_andy_deck_label"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="4dp"
+                        android:text="ANDY'S DECK"
+                        android:textColor="#FFFFFF"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+
+                    <Spinner
+                        android:id="@+id/sp_andy_deck"
+                        android:layout_width="match_parent"
+                        android:layout_height="52dp"
+                        android:minHeight="52dp"
+                        android:gravity="center_vertical"
+                        android:popupBackground="#1F1133"
+                        android:background="@drawable/brutal_spinner_bg" />
+                </LinearLayout>
+
+                <!-- Kirsten Deck -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="12dp"
+                    android:background="@drawable/brutal_btn_pink"
+                    android:orientation="vertical"
+                    android:padding="12dp">
+
+                    <TextView
+                        android:id="@+id/tv_kirsten_deck_label"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="4dp"
+                        android:text="KIRSTEN'S DECK"
+                        android:textColor="#FFFFFF"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+
+                    <Spinner
+                        android:id="@+id/sp_kirsten_deck"
+                        android:layout_width="match_parent"
+                        android:layout_height="52dp"
+                        android:minHeight="52dp"
+                        android:gravity="center_vertical"
+                        android:popupBackground="#1F1133"
+                        android:background="@drawable/brutal_spinner_bg" />
+                </LinearLayout>
+
+                <!-- Format Buttons & Swap -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btn_swap_decks"
+                        android:layout_width="wrap_content"
+                        android:layout_height="44dp"
+                        android:layout_marginEnd="8dp"
+                        android:background="@drawable/brutal_btn_dark"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
+                        android:text="⇄ SWAP"
+                        android:textColor="#F4F4F6"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <Button
+                        android:id="@+id/btn_bo1"
+                        android:layout_width="0dp"
+                        android:layout_height="44dp"
+                        android:layout_marginEnd="4dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/brutal_btn_dark"
+                        android:text="Bo1"
+                        android:textColor="#D1D5DB"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+
+                    <Button
+                        android:id="@+id/btn_bo3"
+                        android:layout_width="0dp"
+                        android:layout_height="44dp"
+                        android:layout_marginEnd="4dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/brutal_btn_amber"
+                        android:text="Bo3"
+                        android:textColor="#000000"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+
+                    <Button
+                        android:id="@+id/btn_bo5"
+                        android:layout_width="0dp"
+                        android:layout_height="44dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/brutal_btn_dark"
+                        android:text="Bo5"
+                        android:textColor="#D1D5DB"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- 3. LIVE MATCH ARENA CARD -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@drawable/brutal_card_dark"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <!-- Scoreboard Header -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="14dp"
+                    android:background="@drawable/brutal_btn_dark"
+                    android:gravity="center"
+                    android:orientation="vertical"
+                    android:padding="14dp">
+
+                    <TextView
+                        android:id="@+id/tv_series_status"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="10dp"
+                        android:background="@drawable/brutal_tag_teal"
+                        android:text="Game 1 • Series 0-0 (Bo3)"
+                        android:textColor="#000000"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center"
+                        android:orientation="horizontal">
+
+                        <!-- Andy Score -->
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:gravity="center"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="ANDY"
+                                android:textColor="#A855F7"
+                                android:textSize="12sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tv_andy_score"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="0"
+                                android:textColor="#FFFFFF"
+                                android:textSize="52sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+
+                        <!-- Wins Needed -->
+                        <TextView
+                            android:id="@+id/tv_wins_needed"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="FIRST TO 2"
+                            android:textColor="#FFB703"
+                            android:textSize="11sp"
+                            android:textStyle="bold" />
+
+                        <!-- Kirsten Score -->
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:gravity="center"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="KIRSTEN"
+                                android:textColor="#FF4B91"
+                                android:textSize="12sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tv_kirsten_score"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="0"
+                                android:textColor="#FFFFFF"
+                                android:textSize="52sp"
+                                android:textStyle="bold" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <!-- Game Log Chips -->
+                    <TextView
+                        android:id="@+id/tv_game_log"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text=""
+                        android:textColor="#9CA3AF"
+                        android:textSize="12sp"
+                        android:visibility="gone" />
+                </LinearLayout>
+
+                <!-- START MATCH BUTTON (LOCK IN DECKS) -->
+                <Button
+                    android:id="@+id/btn_start_match"
+                    android:layout_width="match_parent"
+                    android:layout_height="56dp"
+                    android:layout_marginBottom="12dp"
+                    android:background="@drawable/brutal_btn_teal"
+                    android:gravity="center"
+                    android:text="⚔️ START MATCH (LOCK IN DECKS)"
+                    android:textColor="#000000"
+                    android:textSize="16sp"
+                    android:textStyle="bold" />
+
+                <!-- GIANT WIN BUTTONS -->
+                <Button
+                    android:id="@+id/btn_andy_win"
+                    android:layout_width="match_parent"
+                    android:layout_height="72dp"
+                    android:layout_marginBottom="10dp"
+                    android:background="@drawable/brutal_btn_purple"
+                    android:gravity="center"
+                    android:lineSpacingExtra="2dp"
+                    android:text="ANDY WON GAME 1\nDetectives"
+                    android:textColor="#FFFFFF"
+                    android:textSize="17sp"
+                    android:textStyle="bold" />
+
+                <Button
+                    android:id="@+id/btn_kirsten_win"
+                    android:layout_width="match_parent"
+                    android:layout_height="72dp"
+                    android:layout_marginBottom="12dp"
+                    android:background="@drawable/brutal_btn_pink"
+                    android:gravity="center"
+                    android:lineSpacingExtra="2dp"
+                    android:text="KIRSTEN WON GAME 1\nBounce Control"
+                    android:textColor="#FFFFFF"
+                    android:textSize="17sp"
+                    android:textStyle="bold" />
+
+                <!-- Undo and Reset row -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="14dp"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btn_undo"
+                        android:layout_width="0dp"
+                        android:layout_height="44dp"
+                        android:layout_marginEnd="6dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/brutal_btn_amber"
+                        android:text="↺ UNDO LAST GAME"
+                        android:textColor="#000000"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <Button
+                        android:id="@+id/btn_reset"
+                        android:layout_width="0dp"
+                        android:layout_height="44dp"
+                        android:layout_marginStart="6dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/brutal_btn_dark"
+                        android:text="RESET MATCH"
+                        android:textColor="#D1D5DB"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <!-- FINISH & SAVE MATCH BUTTON -->
+                <Button
+                    android:id="@+id/btn_save_match"
+                    android:layout_width="match_parent"
+                    android:layout_height="56dp"
+                    android:background="@drawable/brutal_btn_teal"
+                    android:enabled="false"
+                    android:text="🏆 FINISH &amp; SAVE MATCH"
+                    android:textColor="#000000"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+
+            </LinearLayout>
+
+            <!-- 4. STREAM MATCH HISTORY & RETROACTIVE EDITING -->
+            <LinearLayout
+                android:id="@+id/card_match_history"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:background="@drawable/brutal_card"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="12dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="📜 STREAM MATCH HISTORY"
+                        android:textColor="#00F5D4"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tv_match_history_count"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="@drawable/bg_pill_dark"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
+                        android:paddingTop="3dp"
+                        android:paddingBottom="3dp"
+                        android:text="0 Matches"
+                        android:textColor="#FFB703"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <!-- Empty state text -->
+                <TextView
+                    android:id="@+id/tv_match_history_empty"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center"
+                    android:padding="20dp"
+                    android:text="No matches logged for this stream yet."
+                    android:textColor="#9CA3AF"
+                    android:textSize="13sp" />
+
+                <!-- Container for dynamic match cards -->
+                <LinearLayout
+                    android:id="@+id/ll_match_history_list"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical" />
+            </LinearLayout>
+
+        </LinearLayout>
+    </ScrollView>
+
+</FrameLayout>

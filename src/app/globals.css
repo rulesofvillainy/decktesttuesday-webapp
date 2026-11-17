@@ -1,0 +1,82 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --villainy-purple: #3B1F54;
+  --villainy-deep: #1F102F;
+  --villainy-black: #121212;
+  --villainy-canvas: #160D24;
+  --villainy-pink: #FF2E93;
+  --villainy-pink-light: #FF4B91;
+  --villainy-teal: #00F5D4;
+  --villainy-amber: #FFB703;
+}
+
+body {
+  background-color: #160D24;
+  color: #F4F4F6;
+  background-image: radial-gradient(rgba(175, 95, 230, 0.15) 1.5px, transparent 1.5px);
+  background-size: 24px 24px;
+  min-height: 100vh;
+}
+
+/* OBS Overlay transparency and dev tool suppression */
+body:has([data-obs-overlay]) {
+  background-color: transparent !important;
+  background-image: none !important;
+  min-height: 0 !important;
+  height: 500px !important;
+  width: 375px !important;
+  overflow: hidden !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+body:has([data-obs-overlay]) nav,
+body:has([data-obs-overlay]) footer,
+body:has([data-obs-overlay]) header {
+  display: none !important;
+}
+
+body:has([data-obs-overlay]) main {
+  flex: none !important;
+  display: block !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  width: 375px !important;
+  height: 500px !important;
+  overflow: hidden !important;
+}
+
+nextjs-portal,
+#nextjs-dev-tools,
+[data-nextjs-toast] {
+  display: none !important;
+}
+
+@layer components {
+  .brutal-card {
+    @apply bg-[#241438] text-[#F4F4F6] border-[3px] border-black shadow-[4px_4px_0px_#000000];
+  }
+
+  .brutal-card-dark {
+    @apply bg-[#190C28] text-[#F4F4F6] border-[3px] border-black shadow-[4px_4px_0px_#000000];
+  }
+
+  .brutal-card-purple {
+    @apply bg-[#3B1F54] text-[#F4F4F6] border-[3px] border-black shadow-[4px_4px_0px_#000000];
+  }
+
+  .brutal-btn {
+    @apply inline-flex items-center justify-center gap-2 font-black uppercase tracking-wider border-[3px] border-black shadow-[4px_4px_0px_#000000] transition-all duration-75 select-none active:translate-x-[2px] active:translate-y-[2px] active:shadow-[2px_2px_0px_#000000] disabled:opacity-50 disabled:pointer-events-none;
+  }
+
+  .brutal-input {
+    @apply w-full bg-[#180C26] text-[#F4F4F6] font-bold border-[3px] border-black px-3.5 py-2.5 shadow-[3px_3px_0px_#000000] focus:outline-none focus:ring-0 focus:border-[#00F5D4] placeholder:text-neutral-400 placeholder:font-medium;
+  }
+
+  .brutal-tag {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-black uppercase tracking-wider border-[2px] border-black shadow-[2px_2px_0px_#000000];
+  }
+}

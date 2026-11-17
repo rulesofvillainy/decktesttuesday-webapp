@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg_deep">#090D16</color>
+    <color name="bg_indigo">#1E1B4B</color>
+    <color name="bg_panel">#111827</color>
+    <color name="bg_card">#1E293B</color>
+    <color name="bg_card_hover">#283548</color>
+    <color name="border_subtle">#33FFFFFF</color>
+    <color name="border_highlight">#803B82F6</color>
+    
+    <color name="text_main">#F8FAFC</color>
+    <color name="text_muted">#94A3B8</color>
+    <color name="text_dim">#64748B</color>
+
+    <color name="accent_blue">#3B82F6</color>
+    <color name="accent_blue_dark">#1D4ED8</color>
+    <color name="accent_gold">#FFB703</color>
+    <color name="accent_gold_dark">#D97706</color>
+    <color name="accent_emerald">#00F5D4</color>
+    <color name="accent_emerald_light">#34D399</color>
+    <color name="accent_emerald_dark">#059669</color>
+    <color name="accent_crimson">#EF4444</color>
+    <color name="accent_crimson_dark">#B91C1C</color>
+    <color name="accent_purple">#8B5CF6</color>
+    <color name="andy_purple">#8B5CF6</color>
+    <color name="kirsten_pink">#FF2E93</color>
+</resources>
