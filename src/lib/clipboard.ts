@@ -1,6 +1,6 @@
 /**
  * Robust clipboard copy helper supporting secure (HTTPS/localhost)
- * and non-secure (HTTP LAN IP like http://192.168.1.195:3000) contexts.
+ * and non-secure (HTTP LAN IP like http://192.168.1.195:3001) contexts.
  */
 export async function copyTextToClipboard(text: string): Promise<boolean> {
   // Method 1: Modern navigator.clipboard API (works in HTTPS and localhost)

@@ -42,7 +42,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`.
+Open `http://localhost:3001`.
 - Default local admin password (configured in `.env.local`): `villainy`
 - To run PostgreSQL migrations against a live `DATABASE_URL`:
   ```bash

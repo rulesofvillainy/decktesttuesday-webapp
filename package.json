@@ -4,9 +4,9 @@
   "private": true,
   "description": "Deck Test Tuesday (DTT) - Disney Lorcana Livestream Tracker & Community Deck Hub for Rules of Villainy",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 3001",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -p 3001",
     "lint": "next lint",
     "db:init": "node --env-file=.env.local scripts/init-db.mjs",
     "db:sync": "node --env-file=.env.local scripts/sync-local-to-db.mjs",
@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "lucide-react": "^0.469.0",
-    "next": "^15.1.6",
+    "next": "^16.4.6",
     "pg": "^8.13.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

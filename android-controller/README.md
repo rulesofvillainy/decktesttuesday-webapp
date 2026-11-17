@@ -87,13 +87,13 @@ To include it directly in the web app repository:
 ### Over Local Wi-Fi:
 1. Ensure your Next.js server binds to `0.0.0.0` so other devices on your LAN can connect:
    ```bash
-   npm run dev -- -H 0.0.0.0 -p 3000
+   npm run dev -- -H 0.0.0.0 -p 3001
    ```
-2. On the tablet, enter your computer's local IP (e.g. `192.168.1.195`), port `3000`, password `villainy`, and tap **CONNECT CONTROLLER**.
+2. On the tablet, enter your computer's local IP (e.g. `192.168.1.195`), port `3001`, password `villainy`, and tap **CONNECT CONTROLLER**.
 
 ### Over USB Cable (No Wi-Fi needed):
 1. In terminal, run:
    ```bash
-   adb reverse tcp:3000 tcp:3000
+   adb reverse tcp:3001 tcp:3001
    ```
-2. On the tablet, set Host to `127.0.0.1` and Port to `3000`, then tap **CONNECT CONTROLLER**.
+2. On the tablet, set Host to `127.0.0.1` and Port to `3001`, then tap **CONNECT CONTROLLER**.
