@@ -15,7 +15,7 @@ export function DeckModal({ deck, onClose }: DeckModalProps) {
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-3 sm:p-5 overflow-y-auto"
+      className="fixed inset-0 !mt-0 z-50 bg-black/80 flex items-center justify-center p-3 sm:p-5 overflow-y-auto"
       onClick={onClose}
     >
       <div

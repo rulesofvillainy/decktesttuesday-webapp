@@ -17,6 +17,7 @@ import {
   FolderPlus,
   Gamepad2,
   Layers,
+  Lock,
   LogOut,
   Plus,
   Radio,
@@ -57,6 +58,7 @@ import { InkPairBadges } from './InkBadge';
 import { DeckModal } from './DeckModal';
 import { useRealtime } from '@/hooks/useRealtime';
 import { copyTextToClipboard } from '@/lib/clipboard';
+import { sanitizeExternalUrl } from '@/lib/deck-parser';
 
 interface RetentionStats {
   totalSubmissions: number;
@@ -522,6 +524,27 @@ export function AdminDashboardClient({
             ? `Unassigned ${removedCount} unplayed deck(s) from stream.`
             : 'No unplayed decks to unassign.'
         );
+      }
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleRefreshDeckSnapshot = async (episodeId: string, deckId: string) => {
+    setBusyId(`refresh-snap-${deckId}`);
+    try {
+      const res = await fetch('/api/decks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'refresh_snapshot',
+          episode_id: episodeId,
+          deck_id: deckId,
+        }),
+      });
+      if (res.ok) {
+        await reloadAll();
+        setBannerMsg('Synced stream deck snapshot from Deck Library.');
       }
     } finally {
       setBusyId(null);
@@ -1499,24 +1522,35 @@ export function AdminDashboardClient({
                                         <div>
                                           <div className="flex items-center justify-between gap-1.5 flex-wrap">
                                             <InkPairBadges inkOne={deck.ink_one} inkTwo={deck.ink_two} size="sm" />
-                                            {played && (
-                                              <span
-                                                className={`text-[10px] font-mono font-black uppercase px-1.5 py-0.5 border border-black ${
-                                                  played.includes('Andy')
-                                                    ? 'bg-[#3B1F54] text-[#00F5D4]'
-                                                    : 'bg-[#FF2E93] text-white'
-                                                }`}
-                                              >
-                                                {played}
-                                              </span>
-                                            )}
+                                            <div className="flex items-center gap-1 flex-wrap">
+                                              {deck.is_locked && (
+                                                <span
+                                                  className="inline-flex items-center gap-1 text-[10px] font-mono font-black uppercase px-1.5 py-0.5 border border-black bg-[#181920] text-[#FFB703]"
+                                                  title="Locked stream snapshot — future Deck Library edits will not change this stream's decklist"
+                                                >
+                                                  <Lock className="w-2.5 h-2.5" />
+                                                  Locked
+                                                </span>
+                                              )}
+                                              {played && (
+                                                <span
+                                                  className={`text-[10px] font-mono font-black uppercase px-1.5 py-0.5 border border-black ${
+                                                    played.includes('Andy')
+                                                      ? 'bg-[#3B1F54] text-[#00F5D4]'
+                                                      : 'bg-[#FF2E93] text-white'
+                                                  }`}
+                                                >
+                                                  {played}
+                                                </span>
+                                              )}
+                                            </div>
                                           </div>
                                           <div className="font-black text-sm uppercase text-white mt-1.5 truncate">
                                             {deck.deck_name}
                                           </div>
                                         </div>
 
-                                        <div className="flex items-center justify-between border-t border-black/60 pt-2 text-xs">
+                                        <div className="flex items-center justify-between border-t border-black/60 pt-2 text-xs gap-2">
                                           <button
                                             type="button"
                                             onClick={() => setInspectingDeck(deck)}
@@ -1524,13 +1558,26 @@ export function AdminDashboardClient({
                                           >
                                             Inspect Cards
                                           </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => handleUnassignDeckFromEpisode(ep.id, deck.id)}
-                                            className="text-[#D62828] font-bold text-xs hover:underline"
-                                          >
-                                            Unassign
-                                          </button>
+                                          <div className="flex items-center gap-2.5">
+                                            {deck.is_locked && (
+                                              <button
+                                                type="button"
+                                                disabled={busyId === `refresh-snap-${deck.id}`}
+                                                onClick={() => handleRefreshDeckSnapshot(ep.id, deck.id)}
+                                                className="text-[#FFB703] font-mono text-[11px] hover:underline"
+                                                title="Pull latest decklist edits from Deck Library into this locked stream snapshot"
+                                              >
+                                                {busyId === `refresh-snap-${deck.id}` ? 'Syncing...' : 'Sync Latest'}
+                                              </button>
+                                            )}
+                                            <button
+                                              type="button"
+                                              onClick={() => handleUnassignDeckFromEpisode(ep.id, deck.id)}
+                                              className="text-[#D62828] font-bold text-xs hover:underline"
+                                            >
+                                              Unassign
+                                            </button>
+                                          </div>
                                         </div>
                                       </div>
                                     );
@@ -1643,17 +1690,21 @@ export function AdminDashboardClient({
                     {sub.notes && (
                       <p className="text-xs text-neutral-300">{sub.notes}</p>
                     )}
-                    {sub.deck_link && (
-                      <a
-                        href={sub.deck_link}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-xs font-mono text-[#00F5D4] underline"
-                      >
-                        <ExternalLink className="w-3 h-3" />
-                        {sub.deck_link}
-                      </a>
-                    )}
+                    {(() => {
+                      const safeDeckLink = sanitizeExternalUrl(sub.deck_link);
+                      if (!safeDeckLink) return null;
+                      return (
+                        <a
+                          href={safeDeckLink}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs font-mono text-[#00F5D4] underline"
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                          {safeDeckLink}
+                        </a>
+                      );
+                    })()}
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2 shrink-0">
@@ -1830,7 +1881,7 @@ export function AdminDashboardClient({
 
       {/* ASSIGN SUBMISSION MODAL */}
       {assignSubModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+        <div className="fixed inset-0 !mt-0 z-50 bg-black/80 flex items-center justify-center p-4">
           <form onSubmit={handleAssignSubToStream} className="brutal-card max-w-md w-full p-5 space-y-4">
             <div className="flex items-center justify-between border-b border-black pb-2">
               <h3 className="text-base font-black uppercase text-white">
@@ -1883,7 +1934,7 @@ export function AdminDashboardClient({
       {/* =================================================================== */}
       {importModalOpen && (
         <div
-          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 overflow-y-auto animate-in fade-in"
+          className="fixed inset-0 !mt-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 overflow-y-auto animate-in fade-in"
           onClick={() => setImportModalOpen(false)}
         >
           <div
@@ -2469,7 +2520,7 @@ function DeckEditModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 overflow-y-auto"
+      className="fixed inset-0 !mt-0 z-50 bg-black/80 flex items-center justify-center p-4 overflow-y-auto"
       onClick={onClose}
     >
       <form

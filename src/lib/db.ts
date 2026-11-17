@@ -13,6 +13,7 @@ import {
 import {
   CachedCard,
   Deck,
+  DeckSnapshot,
   DeckSubmission,
   EnrichedEpisode,
   Episode,
@@ -27,6 +28,7 @@ interface EpisodeDeckRow {
   episode_id: string;
   deck_id: string;
   assigned_at: string;
+  deck_snapshot?: DeckSnapshot | null;
 }
 
 interface LocalDatabaseSchema {
@@ -361,12 +363,89 @@ export async function getAllDecks(): Promise<Deck[]> {
     .sort((a, b) => (b.updated_at || b.created_at).localeCompare(a.updated_at || a.created_at));
 }
 
+function buildDeckSnapshot(
+  d: Deck,
+  lockedAt = new Date().toISOString()
+): DeckSnapshot {
+  return {
+    id: d.id,
+    pilot: d.pilot || 'Unassigned',
+    built_by: d.built_by || null,
+    deck_name: d.deck_name,
+    ink_one: d.ink_one,
+    ink_two: d.ink_two,
+    deck_link: d.deck_link || null,
+    notes: d.notes || null,
+    raw_decklist: d.raw_decklist || '',
+    parsed_cards: Array.isArray(d.parsed_cards) ? d.parsed_cards : [],
+    locked_at: lockedAt,
+  };
+}
+
+function applyDeckSnapshot(
+  d: Deck,
+  snapshot?: DeckSnapshot | null
+): Deck {
+  if (!snapshot) return d;
+  return {
+    ...d,
+    pilot: snapshot.pilot ?? d.pilot,
+    built_by: snapshot.built_by ?? null,
+    deck_name: snapshot.deck_name,
+    ink_one: snapshot.ink_one,
+    ink_two: snapshot.ink_two,
+    deck_link: snapshot.deck_link ?? null,
+    notes: snapshot.notes ?? null,
+    raw_decklist: snapshot.raw_decklist ?? '',
+    parsed_cards: Array.isArray(snapshot.parsed_cards)
+      ? snapshot.parsed_cards
+      : [],
+    is_locked: true,
+    locked_at: snapshot.locked_at || null,
+  };
+}
+
+async function getEpisodeDeckSnapshots(
+  episodeId?: string
+): Promise<Map<string, DeckSnapshot>> {
+  const map = new Map<string, DeckSnapshot>();
+  if (isPostgresConfigured()) {
+    await ensurePostgresInitialized();
+    const pool = getPool();
+    const query = episodeId
+      ? `SELECT episode_id, deck_id, deck_snapshot
+         FROM episode_decks
+         WHERE episode_id = $1 AND deck_snapshot IS NOT NULL`
+      : `SELECT episode_id, deck_id, deck_snapshot
+         FROM episode_decks
+         WHERE deck_snapshot IS NOT NULL`;
+    const params = episodeId ? [episodeId] : [];
+    const { rows } = await pool.query(query, params);
+    for (const r of rows) {
+      if (r.deck_snapshot && typeof r.deck_snapshot === 'object') {
+        map.set(`${r.episode_id}:${r.deck_id}`, r.deck_snapshot as DeckSnapshot);
+      }
+    }
+    return map;
+  }
+
+  const db = readLocalDb();
+  for (const ed of db.episode_decks) {
+    if (episodeId && ed.episode_id !== episodeId) continue;
+    if (ed.deck_snapshot) {
+      map.set(`${ed.episode_id}:${ed.deck_id}`, ed.deck_snapshot);
+    }
+  }
+  return map;
+}
+
 export async function getDecks(episodeId?: string): Promise<Deck[]> {
   if (!episodeId) return getAllDecks();
 
-  const [allDecks, epMatches] = await Promise.all([
+  const [allDecks, epMatches, snapshotMap] = await Promise.all([
     getAllDecks(),
     getMatches(episodeId),
+    getEpisodeDeckSnapshots(episodeId),
   ]);
   const { andyPlayed, kirstenPlayed } = computePlayedDeckSets(epMatches);
 
@@ -377,7 +456,7 @@ export async function getDecks(episodeId?: string): Promise<Deck[]> {
         d.assigned_episodes?.some((a) => a.episode_id === episodeId)
     )
     .map((d) => ({
-      ...d,
+      ...applyDeckSnapshot(d, snapshotMap.get(`${episodeId}:${d.id}`)),
       played_by: getPlayedByForDeck(d.id, andyPlayed, kirstenPlayed),
     }));
 }
@@ -449,8 +528,118 @@ export async function removeDeckFromEpisode(
 }
 
 /**
+ * Snapshots and locks the decklists for all decks assigned/played on an ended episode
+ * so later edits in the global Deck Manager never mutate historical stream records.
+ */
+export async function lockDeckSnapshotsForEndedEpisode(
+  episodeId: string,
+  options?: { forceRefreshDeckIds?: string[] }
+): Promise<number> {
+  const ep = await getEpisodeById(episodeId, { includeHidden: true });
+  if (!ep || ep.is_live || ep.is_upcoming) {
+    return 0;
+  }
+
+  const epMatches = await getMatches(episodeId);
+  if (epMatches.length === 0) {
+    return 0;
+  }
+
+  const playedIds = new Set<string>();
+  for (const m of epMatches) {
+    if (m.andy_deck_id) playedIds.add(m.andy_deck_id);
+    if (m.kirsten_deck_id) playedIds.add(m.kirsten_deck_id);
+  }
+
+  const forceSet = new Set(options?.forceRefreshDeckIds || []);
+  const now = new Date().toISOString();
+
+  if (isPostgresConfigured()) {
+    await ensurePostgresInitialized();
+    const pool = getPool();
+
+    for (const deckId of playedIds) {
+      await pool.query(
+        `INSERT INTO episode_decks (episode_id, deck_id, assigned_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (episode_id, deck_id) DO NOTHING`,
+        [episodeId, deckId]
+      );
+    }
+
+    const { rows } = await pool.query(
+      `SELECT ed.deck_id, ed.deck_snapshot,
+              d.pilot, d.built_by, d.deck_name, d.ink_one, d.ink_two,
+              d.deck_link, d.notes, d.raw_decklist, d.parsed_cards, d.created_at
+       FROM episode_decks ed
+       JOIN decks d ON d.id = ed.deck_id
+       WHERE ed.episode_id = $1`,
+      [episodeId]
+    );
+
+    let lockedCount = 0;
+    for (const r of rows) {
+      const deckId = String(r.deck_id);
+      const needsLock = !r.deck_snapshot || forceSet.has(deckId);
+      if (!needsLock) continue;
+      const snap = buildDeckSnapshot(
+        {
+          ...r,
+          id: deckId,
+          parsed_cards: Array.isArray(r.parsed_cards) ? r.parsed_cards : [],
+          created_at: r.created_at ? new Date(r.created_at).toISOString() : now,
+        },
+        now
+      );
+      await pool.query(
+        `UPDATE episode_decks
+         SET deck_snapshot = $1::jsonb
+         WHERE episode_id = $2 AND deck_id = $3`,
+        [JSON.stringify(snap), episodeId, r.deck_id]
+      );
+      lockedCount++;
+    }
+    return lockedCount;
+  }
+
+  const db = readLocalDb();
+  const deckById = new Map(db.decks.map((d) => [d.id, d]));
+
+  for (const deckId of playedIds) {
+    if (
+      deckById.has(deckId) &&
+      !db.episode_decks.some(
+        (ed) => ed.episode_id === episodeId && ed.deck_id === deckId
+      )
+    ) {
+      db.episode_decks.push({
+        episode_id: episodeId,
+        deck_id: deckId,
+        assigned_at: now,
+      });
+    }
+  }
+
+  let lockedCount = 0;
+  for (const ed of db.episode_decks) {
+    if (ed.episode_id !== episodeId) continue;
+    const needsLock = !ed.deck_snapshot || forceSet.has(ed.deck_id);
+    if (!needsLock) continue;
+    const deck = deckById.get(ed.deck_id);
+    if (!deck) continue;
+    ed.deck_snapshot = buildDeckSnapshot(deck, now);
+    lockedCount++;
+  }
+
+  if (lockedCount > 0) {
+    writeLocalDb(db);
+  }
+  return lockedCount;
+}
+
+/**
  * Unassigns any decks from a finished episode (not live, not upcoming, and has recorded matches)
- * that were never played in any match on that episode. Returns the unassigned deck IDs.
+ * that were never played in any match on that episode, and locks snapshots for played decks.
  */
 export async function pruneUnplayedDecksFromEndedEpisode(
   episodeId: string
@@ -496,6 +685,7 @@ export async function pruneUnplayedDecksFromEndedEpisode(
         [episodeId, playedArray]
       ),
     ]);
+    await lockDeckSnapshotsForEndedEpisode(episodeId);
     const removed = new Set<string>([
       ...delRes.rows.map((r) => String(r.deck_id)),
       ...updRes.rows.map((r) => String(r.id)),
@@ -521,6 +711,7 @@ export async function pruneUnplayedDecksFromEndedEpisode(
   if (removed.size > 0) {
     writeLocalDb(db);
   }
+  await lockDeckSnapshotsForEndedEpisode(episodeId);
   return Array.from(removed);
 }
 
@@ -545,7 +736,7 @@ export async function pruneUnplayedDecksForEndedEpisodes(): Promise<
   return results;
 }
 
-const PRUNE_ENDED_BACKFILL_KEY = 'pruned_ended_stream_decks_v1';
+const PRUNE_ENDED_BACKFILL_KEY = 'ended_stream_decks_locked_v2';
 let endedStreamPruneDone = false;
 let endedStreamPrunePromise: Promise<void> | null = null;
 
@@ -884,10 +1075,11 @@ export async function getEnrichedEpisodes(options?: {
 }): Promise<EnrichedEpisode[]> {
   await ensureEndedStreamDecksPrunedOnce();
 
-  const [episodes, allDecks, allMatches] = await Promise.all([
+  const [episodes, allDecks, allMatches, snapshotMap] = await Promise.all([
     getEpisodes(options),
     getAllDecks(),
     getMatches(),
+    getEpisodeDeckSnapshots(),
   ]);
 
   const deckMap = new Map<string, Deck>();
@@ -900,28 +1092,43 @@ export async function getEnrichedEpisodes(options?: {
     const { andyPlayed: epAndyPlayed, kirstenPlayed: epKirstenPlayed } =
       computePlayedDeckSets(epRawMatches);
 
-    // Scope played_by strictly to matches played on THIS stream
-    const withEpisodePlayedBy = (d: Deck): Deck => ({
-      ...d,
+    // Scope played_by strictly to matches played on THIS stream and apply any frozen snapshot
+    const resolveEpisodeDeck = (d: Deck): Deck => ({
+      ...applyDeckSnapshot(d, snapshotMap.get(`${ep.id}:${d.id}`)),
       played_by: getPlayedByForDeck(d.id, epAndyPlayed, epKirstenPlayed),
     });
 
     // Find all decks assigned to this episode
+    const epDeckMap = new Map<string, Deck>();
     const epDecks = allDecks
       .filter(
         (d) =>
           d.episode_id === ep.id ||
           d.assigned_episodes?.some((a) => a.episode_id === ep.id)
       )
-      .map(withEpisodePlayedBy);
+      .map((d) => {
+        const resolved = resolveEpisodeDeck(d);
+        epDeckMap.set(d.id, resolved);
+        return resolved;
+      });
 
     const epMatches = epRawMatches.map((m) => {
-      const andyDeck = deckMap.get(m.andy_deck_id);
-      const kirstenDeck = deckMap.get(m.kirsten_deck_id);
+      const andyDeck =
+        epDeckMap.get(m.andy_deck_id) || deckMap.get(m.andy_deck_id);
+      const kirstenDeck =
+        epDeckMap.get(m.kirsten_deck_id) || deckMap.get(m.kirsten_deck_id);
       return {
         ...m,
-        andy_deck: andyDeck ? withEpisodePlayedBy(andyDeck) : undefined,
-        kirsten_deck: kirstenDeck ? withEpisodePlayedBy(kirstenDeck) : undefined,
+        andy_deck: andyDeck
+          ? epDeckMap.has(m.andy_deck_id)
+            ? andyDeck
+            : resolveEpisodeDeck(andyDeck)
+          : undefined,
+        kirsten_deck: kirstenDeck
+          ? epDeckMap.has(m.kirsten_deck_id)
+            ? kirstenDeck
+            : resolveEpisodeDeck(kirstenDeck)
+          : undefined,
       };
     });
 
@@ -1583,10 +1790,15 @@ export async function pruneOldSubmissions(retentionDays = 90): Promise<{
   cutoffDateIso: string;
   sqlExecuted: string;
 }> {
+  const safeDays = Math.max(
+    1,
+    Math.min(3650, Math.trunc(Number(retentionDays) || 90))
+  );
   const cutoff = new Date(
-    Date.now() - retentionDays * 24 * 60 * 60 * 1000
+    Date.now() - safeDays * 24 * 60 * 60 * 1000
   ).toISOString();
-  const sqlQuery = `DELETE FROM deck_submissions WHERE status IN ('Approved', 'Played', 'Archived') AND created_at < NOW() - INTERVAL '${retentionDays} days';`;
+  const sqlQuery =
+    "DELETE FROM deck_submissions WHERE status IN ('Approved', 'Played', 'Archived') AND created_at < $1;";
 
   if (isPostgresConfigured()) {
     await ensurePostgresInitialized();

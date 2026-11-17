@@ -1062,7 +1062,7 @@ export function MobileControllerClient({
       {/* MODAL 1: EDIT LIVE MATCH DRAWER */}
       {liveEditDrawerOpen && (
         <div
-          className="fixed inset-0 z-50 bg-black/80 flex items-end justify-center p-0"
+          className="fixed inset-0 !mt-0 z-50 bg-black/80 flex items-end justify-center p-0"
           onClick={() => setLiveEditDrawerOpen(false)}
         >
           <div
@@ -1172,7 +1172,7 @@ export function MobileControllerClient({
       {/* MODAL 2: EDIT LOGGED MATCH DIALOG (matches dialog_edit_match.xml) */}
       {editingLoggedMatch && (
         <div
-          className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-3"
+          className="fixed inset-0 !mt-0 z-50 bg-black/85 flex items-center justify-center p-3"
           onClick={() => setEditingLoggedMatch(null)}
         >
           <div
@@ -1329,7 +1329,7 @@ export function MobileControllerClient({
       {/* CONFIRM DELETE MODAL */}
       {deletingMatchId && (
         <div
-          className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4"
+          className="fixed inset-0 !mt-0 z-50 bg-black/85 flex items-center justify-center p-4"
           onClick={() => setDeletingMatchId(null)}
         >
           <div
@@ -1366,7 +1366,7 @@ export function MobileControllerClient({
       {/* MODAL 3: QUICK NEW DECK MODAL */}
       {quickDeckModalOpen && (
         <div
-          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+          className="fixed inset-0 !mt-0 z-50 bg-black/80 flex items-center justify-center p-4"
           onClick={() => setQuickDeckModalOpen(false)}
         >
           <form

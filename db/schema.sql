@@ -106,12 +106,16 @@ ALTER TABLE decks ADD COLUMN IF NOT EXISTS notes TEXT;
 ALTER TABLE decks ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 -- episode_decks: Many-to-many junction table (a deck can be assigned to multiple streams)
+-- deck_snapshot stores the frozen stream-specific version of the deck once the stream ends.
 CREATE TABLE IF NOT EXISTS episode_decks (
     episode_id UUID NOT NULL REFERENCES episodes(id) ON DELETE CASCADE,
     deck_id UUID NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
     assigned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    deck_snapshot JSONB,
     PRIMARY KEY (episode_id, deck_id)
 );
+
+ALTER TABLE episode_decks ADD COLUMN IF NOT EXISTS deck_snapshot JSONB;
 
 -- matches: Head-to-head match series and game-by-game results
 CREATE TABLE IF NOT EXISTS matches (

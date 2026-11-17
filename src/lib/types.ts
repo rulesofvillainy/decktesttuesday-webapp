@@ -69,6 +69,20 @@ export interface ParsedCardEntry {
   inkwell?: boolean;
 }
 
+export interface DeckSnapshot {
+  id: string;
+  pilot?: PilotName | null;
+  built_by?: string | null;
+  deck_name: string;
+  ink_one: LorcanaInk;
+  ink_two: LorcanaInk;
+  deck_link?: string | null;
+  notes?: string | null;
+  raw_decklist: string;
+  parsed_cards: ParsedCardEntry[];
+  locked_at?: string;
+}
+
 export interface Deck {
   id: string;
   episode_id?: string | null;
@@ -84,6 +98,8 @@ export interface Deck {
   parsed_cards: ParsedCardEntry[];
   created_at: string;
   updated_at?: string;
+  is_locked?: boolean;
+  locked_at?: string | null;
   assigned_episodes?: {
     episode_id: string;
     title: string;

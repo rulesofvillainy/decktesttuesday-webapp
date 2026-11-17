@@ -5,6 +5,13 @@ import {
   isAdminAuthenticated,
   verifyAdminPassword,
 } from '@/lib/auth';
+import {
+  checkAdminLoginRateLimit,
+  clearAdminLoginFailures,
+  formatRetryWait,
+  getClientIp,
+  recordAdminLoginFailure,
+} from '@/lib/rate-limit';
 
 function isHttpsRequest(req: NextRequest): boolean {
   const forwardedProto = req.headers
@@ -25,10 +32,54 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const password = String(body.password || '');
+    const clientIp = getClientIp(req);
+    const rateCheck = checkAdminLoginRateLimit(clientIp);
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        {
+          error: rateCheck.reason || 'Too many login attempts. Please try again later.',
+          retryAfterSeconds: rateCheck.retryAfterSeconds,
+        },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(rateCheck.retryAfterSeconds),
+            'X-RateLimit-Remaining': '0',
+          },
+        }
+      );
+    }
+
+    let body: Record<string, unknown>;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json(
+        { error: 'Invalid request body' },
+        { status: 400 }
+      );
+    }
+
+    const password = String(body?.password || '');
 
     if (!verifyAdminPassword(password)) {
+      const failState = recordAdminLoginFailure(clientIp);
+      if (failState.locked) {
+        return NextResponse.json(
+          {
+            error: `Too many failed login attempts. Try again in ${formatRetryWait(failState.retryAfterSeconds)}.`,
+            retryAfterSeconds: failState.retryAfterSeconds,
+          },
+          {
+            status: 429,
+            headers: {
+              'Retry-After': String(failState.retryAfterSeconds),
+              'X-RateLimit-Remaining': '0',
+            },
+          }
+        );
+      }
+
       return NextResponse.json(
         { error: 'Invalid master password. Access denied.' },
         { status: 401 }
@@ -36,6 +87,7 @@ export async function POST(req: NextRequest) {
     }
 
     const token = createAdminSessionToken();
+    clearAdminLoginFailures(clientIp);
     const res = NextResponse.json({
       authenticated: true,
       message: 'Welcome back to the Villainy Control Room!',

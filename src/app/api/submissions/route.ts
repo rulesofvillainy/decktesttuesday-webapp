@@ -6,8 +6,13 @@ import {
   getSubmissions,
   updateSubmissionStatus,
 } from '@/lib/db';
-import { parseDecklistText, validateDeckUrl } from '@/lib/deck-parser';
+import {
+  checkDecklistBounds,
+  parseDecklistText,
+  validateDeckUrl,
+} from '@/lib/deck-parser';
 import { parseAndResolveDecklist } from '@/lib/lorcast';
+import { checkSubmissionRateLimit, getClientIp } from '@/lib/rate-limit';
 import {
   LorcanaInk,
   PilotName,
@@ -17,6 +22,11 @@ import {
 } from '@/lib/types';
 
 export async function GET(req: NextRequest) {
+  const isAdmin = await isAdminAuthenticated();
+  if (!isAdmin) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const statusParam =
       (req.nextUrl.searchParams.get('status') as SubmissionStatus | 'All') ||
@@ -32,7 +42,42 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const clientIp = getClientIp(req);
+    const rateCheck = checkSubmissionRateLimit(clientIp);
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        {
+          error: rateCheck.reason || 'Too many submissions. Please try again later.',
+          retryAfterSeconds: rateCheck.retryAfterSeconds,
+        },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(rateCheck.retryAfterSeconds),
+            'X-RateLimit-Remaining': '0',
+          },
+        }
+      );
+    }
+
+    let body: Record<string, unknown>;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json(
+        { error: 'Invalid request body.' },
+        { status: 400 }
+      );
+    }
+
+    // Silent honeypot check against automated bots
+    if (body.website && String(body.website).trim().length > 0) {
+      return NextResponse.json(
+        { error: 'Invalid submission.' },
+        { status: 400 }
+      );
+    }
+
     const deck_name = String(body.deck_name || '').trim();
     const submitter_name = String(body.submitter_name || '').trim();
     const ink_one = (body.ink_one as LorcanaInk) || 'Amber';
@@ -54,6 +99,20 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (deck_name.length > 120 || submitter_name.length > 80) {
+      return NextResponse.json(
+        { error: 'Deck name (max 120) or submitter name (max 80) is too long.' },
+        { status: 400 }
+      );
+    }
+
+    if (notes && notes.length > 1000) {
+      return NextResponse.json(
+        { error: 'Notes cannot exceed 1000 characters.' },
+        { status: 400 }
+      );
+    }
+
     if (ink_one === ink_two) {
       return NextResponse.json(
         { error: 'Please select two distinct Lorcana ink colors.' },
@@ -61,7 +120,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (submission_type === 'link') {
+    // Validate deck_link regardless of submission_type to prevent stored XSS (e.g. javascript:)
+    if (submission_type === 'link' || deck_link) {
       const check = validateDeckUrl(deck_link || '');
       if (!check.valid) {
         return NextResponse.json(
@@ -69,7 +129,16 @@ export async function POST(req: NextRequest) {
           { status: 400 }
         );
       }
-    } else {
+    }
+
+    if (raw_decklist) {
+      const bounds = checkDecklistBounds(raw_decklist);
+      if (!bounds.valid) {
+        return NextResponse.json({ error: bounds.error }, { status: 400 });
+      }
+    }
+
+    if (submission_type !== 'link') {
       const parsed = parseDecklistText(raw_decklist || '');
       if (!parsed.isValidDecklist) {
         return NextResponse.json(

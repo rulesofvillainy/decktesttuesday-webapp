@@ -2,16 +2,26 @@ import crypto from 'node:crypto';
 import { cookies } from 'next/headers';
 
 export const ADMIN_COOKIE_NAME = 'dtt_admin_session';
+const ADMIN_SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const DEV_FALLBACK_ADMIN_PASSWORD = 'villainy';
+const DEV_FALLBACK_SESSION_SECRET = 'dtt-rules-of-villainy-hmac-secret-2026';
 
 function getAdminPassword(): string {
-  return process.env.ADMIN_PASSWORD || 'villainy';
+  const configured = process.env.ADMIN_PASSWORD?.trim();
+  if (configured) return configured;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('ADMIN_PASSWORD environment variable is required in production');
+  }
+  return DEV_FALLBACK_ADMIN_PASSWORD;
 }
 
 function getSessionSecret(): string {
-  return (
-    process.env.SESSION_SECRET ||
-    'dtt-rules-of-villainy-hmac-secret-2026'
-  );
+  const configured = process.env.SESSION_SECRET?.trim();
+  if (configured) return configured;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('SESSION_SECRET environment variable is required in production');
+  }
+  return DEV_FALLBACK_SESSION_SECRET;
 }
 
 export function createAdminSessionToken(): string {
@@ -31,15 +41,25 @@ export function verifyAdminSessionToken(token?: string | null): boolean {
   try {
     const payload = Buffer.from(encodedPayload, 'base64url').toString('utf8');
     if (!payload.startsWith('dtt-admin:')) return false;
+    const issuedAt = Number(payload.slice('dtt-admin:'.length));
+    const now = Date.now();
+    if (
+      !Number.isFinite(issuedAt) ||
+      issuedAt > now + 60_000 ||
+      now - issuedAt > ADMIN_SESSION_MAX_AGE_MS
+    ) {
+      return false;
+    }
+
     const expectedHmac = crypto
       .createHmac('sha256', `${getSessionSecret()}:${getAdminPassword()}`)
       .update(payload)
       .digest('hex');
 
-    return crypto.timingSafeEqual(
-      Buffer.from(signature, 'utf8'),
-      Buffer.from(expectedHmac, 'utf8')
-    );
+    const sigBuf = Buffer.from(signature, 'utf8');
+    const expBuf = Buffer.from(expectedHmac, 'utf8');
+    if (sigBuf.length !== expBuf.length) return false;
+    return crypto.timingSafeEqual(sigBuf, expBuf);
   } catch {
     return false;
   }
@@ -48,9 +68,9 @@ export function verifyAdminSessionToken(token?: string | null): boolean {
 export function verifyAdminPassword(inputPassword: string): boolean {
   const expected = getAdminPassword();
   if (!inputPassword) return false;
-  const a = Buffer.from(inputPassword);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length) return false;
+  // Hash both values before timingSafeEqual so password length cannot leak via timing
+  const a = crypto.createHash('sha256').update(inputPassword, 'utf8').digest();
+  const b = crypto.createHash('sha256').update(expected, 'utf8').digest();
   return crypto.timingSafeEqual(a, b);
 }
 

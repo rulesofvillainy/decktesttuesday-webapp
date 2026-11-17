@@ -4,7 +4,9 @@ import {
   createMatch,
   deleteMatch,
   deleteSetting,
+  getEpisodeById,
   getMatches,
+  lockDeckSnapshotsForEndedEpisode,
   updateDeck,
   updateMatch,
 } from '@/lib/db';
@@ -74,6 +76,12 @@ export async function POST(req: NextRequest) {
       updateDeck(kirsten_deck_id, { pilot: 'Kirsten' }),
     ]);
 
+    // If a match is added to an already-ended episode, lock snapshots for any newly used decks
+    const ep = await getEpisodeById(episode_id, { includeHidden: true });
+    if (ep && !ep.is_live && !ep.is_upcoming) {
+      await lockDeckSnapshotsForEndedEpisode(episode_id);
+    }
+
     // Clear any active in-progress match for this episode
     await deleteSetting('live_match_' + episode_id);
     broadcastRealtimeEvent('live_match_cleared', { episodeId: episode_id });
@@ -132,6 +140,13 @@ export async function PATCH(req: NextRequest) {
       winner,
       game_log: body.game_log,
     });
+
+    if (updated?.episode_id) {
+      const ep = await getEpisodeById(updated.episode_id, { includeHidden: true });
+      if (ep && !ep.is_live && !ep.is_upcoming) {
+        await lockDeckSnapshotsForEndedEpisode(updated.episode_id);
+      }
+    }
 
     broadcastRealtimeEvent('match_updated', { match: updated, id });
 

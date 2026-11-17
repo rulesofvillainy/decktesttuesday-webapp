@@ -6,11 +6,13 @@ import {
   deleteDeck,
   getAllDecks,
   getDecks,
+  lockDeckSnapshotsForEndedEpisode,
   pruneUnplayedDecksFromEndedEpisode,
   removeDeckFromEpisode,
   updateDeck,
 } from '@/lib/db';
 import { parseAndResolveDecklist } from '@/lib/lorcast';
+import { sanitizeExternalUrl } from '@/lib/deck-parser';
 import { LorcanaInk, PilotName } from '@/lib/types';
 import { broadcastRealtimeEvent } from '@/lib/realtime';
 
@@ -88,6 +90,26 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    if (body.action === 'refresh_snapshot') {
+      const episodeId = String(body.episode_id || body.episodeId || '');
+      const deckId = String(body.deck_id || body.deckId || '');
+      if (!episodeId || !deckId) {
+        return NextResponse.json(
+          { error: 'episode_id and deck_id are required to refresh snapshot' },
+          { status: 400 }
+        );
+      }
+      await lockDeckSnapshotsForEndedEpisode(episodeId, {
+        forceRefreshDeckIds: [deckId],
+      });
+      broadcastRealtimeEvent('deck_updated', { episodeId, deckId });
+      return NextResponse.json({
+        refreshed: true,
+        episode_id: episodeId,
+        deck_id: deckId,
+      });
+    }
+
     const deck_name = String(body.deck_name || '').trim();
     const pilot = (body.pilot as PilotName) || 'Unassigned';
     const built_by = body.built_by ? String(body.built_by).trim() : null;
@@ -95,7 +117,14 @@ export async function POST(req: NextRequest) {
     const ink_two = (body.ink_two as LorcanaInk) || 'Steel';
     const raw_decklist = String(body.raw_decklist || '');
     const episode_id = body.episode_id ? String(body.episode_id) : null;
-    const deck_link = body.deck_link ? String(body.deck_link) : null;
+    const rawDeckLink = body.deck_link ? String(body.deck_link).trim() : '';
+    const deck_link = rawDeckLink ? sanitizeExternalUrl(rawDeckLink) : null;
+    if (rawDeckLink && !deck_link) {
+      return NextResponse.json(
+        { error: 'Deck link must be a valid http:// or https:// URL' },
+        { status: 400 }
+      );
+    }
     const notes = body.notes ? String(body.notes) : null;
 
     if (!deck_name) {
@@ -165,6 +194,23 @@ export async function PATCH(req: NextRequest) {
       }
     }
 
+    let deck_link: string | null | undefined = undefined;
+    if (body.deck_link !== undefined) {
+      const rawDeckLink = body.deck_link ? String(body.deck_link).trim() : '';
+      if (rawDeckLink) {
+        const sanitized = sanitizeExternalUrl(rawDeckLink);
+        if (!sanitized) {
+          return NextResponse.json(
+            { error: 'Deck link must be a valid http:// or https:// URL' },
+            { status: 400 }
+          );
+        }
+        deck_link = sanitized;
+      } else {
+        deck_link = null;
+      }
+    }
+
     const updated = await updateDeck(id, {
       pilot: body.pilot as PilotName | undefined,
       built_by:
@@ -177,12 +223,7 @@ export async function PATCH(req: NextRequest) {
         body.deck_name !== undefined ? String(body.deck_name).trim() : undefined,
       ink_one: body.ink_one as LorcanaInk | undefined,
       ink_two: body.ink_two as LorcanaInk | undefined,
-      deck_link:
-        body.deck_link !== undefined
-          ? body.deck_link
-            ? String(body.deck_link).trim()
-            : null
-          : undefined,
+      deck_link,
       notes: body.notes !== undefined ? (body.notes ? String(body.notes) : null) : undefined,
       raw_decklist: body.raw_decklist,
       parsed_cards,

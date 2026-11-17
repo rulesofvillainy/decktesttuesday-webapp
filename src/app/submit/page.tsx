@@ -18,7 +18,11 @@ import {
   SAMPLE_DECKLIST_TEXT,
   SUBMISSION_FORMATS,
 } from '@/lib/constants';
-import { parseDecklistText, validateDeckUrl } from '@/lib/deck-parser';
+import {
+  parseDecklistText,
+  sanitizeExternalUrl,
+  validateDeckUrl,
+} from '@/lib/deck-parser';
 import {
   DeckSubmission,
   LorcanaInk,
@@ -39,6 +43,7 @@ export default function DeckSubmitPage() {
   const [formatCategory, setFormatCategory] =
     useState<SubmissionFormatCategory>('Core');
   const [notes, setNotes] = useState('');
+  const [website, setWebsite] = useState(''); // Silent honeypot field
 
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -107,6 +112,7 @@ export default function DeckSubmitPage() {
             submissionType === 'full_list' ? rawDecklist.trim() : null,
           format_category: formatCategory,
           notes: notes.trim() || null,
+          website,
         }),
       });
 
@@ -385,6 +391,23 @@ export default function DeckSubmitPage() {
           />
         </div>
 
+        {/* Honeypot anti-bot field (hidden from real users) */}
+        <div
+          aria-hidden="true"
+          className="absolute -left-[9999px] w-px h-px overflow-hidden opacity-0 pointer-events-none"
+        >
+          <label htmlFor="dtt-website-hp">Website</label>
+          <input
+            id="dtt-website-hp"
+            name="website"
+            type="text"
+            tabIndex={-1}
+            autoComplete="off"
+            value={website}
+            onChange={(e) => setWebsite(e.target.value)}
+          />
+        </div>
+
         <div className="flex justify-end">
           <button
             type="submit"
@@ -399,7 +422,7 @@ export default function DeckSubmitPage() {
 
       {/* Success Modal */}
       {submittedResult && (
-        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+        <div className="fixed inset-0 !mt-0 z-50 bg-black/80 flex items-center justify-center p-4">
           <div className="brutal-card max-w-md w-full p-6 space-y-4 relative">
             <button
               type="button"
@@ -429,17 +452,21 @@ export default function DeckSubmitPage() {
               inkTwo={submittedResult.ink_two}
             />
 
-            {submittedResult.deck_link && (
-              <a
-                href={submittedResult.deck_link}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 text-xs font-mono text-[#00F5D4] underline"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                {submittedResult.deck_link}
-              </a>
-            )}
+            {(() => {
+              const safeDeckLink = sanitizeExternalUrl(submittedResult.deck_link);
+              if (!safeDeckLink) return null;
+              return (
+                <a
+                  href={safeDeckLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-xs font-mono text-[#00F5D4] underline"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  {safeDeckLink}
+                </a>
+              );
+            })()}
 
             <div className="flex gap-2.5 pt-2">
               <button

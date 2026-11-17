@@ -100,6 +100,48 @@ export function parseDecklistText(rawText: string): DecklistValidationSummary {
   };
 }
 
+export const MAX_DECKLIST_CHARS = 16_000;
+export const MAX_DECKLIST_LINES = 120;
+
+export function checkDecklistBounds(rawText: string): {
+  valid: boolean;
+  error?: string;
+} {
+  if (rawText.length > MAX_DECKLIST_CHARS) {
+    return {
+      valid: false,
+      error: `Decklist exceeds the maximum length of ${MAX_DECKLIST_CHARS} characters.`,
+    };
+  }
+  const nonEmptyLines = rawText
+    .split(/\r?\n/)
+    .filter((l) => l.trim().length > 0).length;
+  if (nonEmptyLines > MAX_DECKLIST_LINES) {
+    return {
+      valid: false,
+      error: `Decklist exceeds the maximum of ${MAX_DECKLIST_LINES} lines.`,
+    };
+  }
+  return { valid: true };
+}
+
+/**
+ * Returns a safe http(s) URL string for anchor rendering, or null if missing or unsafe
+ * (rejecting javascript:, data:, vbscript:, etc.).
+ */
+export function sanitizeExternalUrl(url?: string | null): string | null {
+  if (!url || !url.trim() || url.trim().length > 500) return null;
+  try {
+    const parsed = new URL(url.trim());
+    if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+      return parsed.toString();
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function validateDeckUrl(url: string): {
   valid: boolean;
   provider: 'Dreamborn' | 'Inkdecks' | null;
@@ -108,8 +150,18 @@ export function validateDeckUrl(url: string): {
   if (!url || !url.trim()) {
     return { valid: false, provider: null, error: 'Deck URL is required' };
   }
+  if (url.trim().length > 500) {
+    return { valid: false, provider: null, error: 'Deck URL is too long (max 500 characters).' };
+  }
   try {
     const parsed = new URL(url.trim());
+    if (parsed.protocol !== 'https:') {
+      return {
+        valid: false,
+        provider: null,
+        error: 'Only https:// URLs from Dreamborn or Inkdecks are accepted.',
+      };
+    }
     const host = parsed.hostname.toLowerCase();
     if (host === 'dreamborn.ink' || host.endsWith('.dreamborn.ink')) {
       return { valid: true, provider: 'Dreamborn' };

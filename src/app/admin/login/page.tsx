@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense, useState } from 'react';
+import React, { Suspense, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { KeyRound, Lock } from 'lucide-react';
 
@@ -13,9 +13,19 @@ function AdminLoginForm() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lockoutSeconds, setLockoutSeconds] = useState(0);
+
+  useEffect(() => {
+    if (lockoutSeconds <= 0) return;
+    const timer = setInterval(() => {
+      setLockoutSeconds((prev) => (prev <= 1 ? 0 : prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [lockoutSeconds]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (lockoutSeconds > 0) return;
     setError(null);
     setLoading(true);
 
@@ -28,6 +38,9 @@ function AdminLoginForm() {
 
       const data = await res.json();
       if (!res.ok) {
+        if (res.status === 429 && Number(data.retryAfterSeconds) > 0) {
+          setLockoutSeconds(Number(data.retryAfterSeconds));
+        }
         setError(data.error || 'Invalid master password');
         return;
       }
@@ -54,7 +67,9 @@ function AdminLoginForm() {
 
         {error && (
           <div className="bg-[#D62828] text-white border-[2px] border-black p-3 text-xs font-black uppercase">
-            {error}
+            {lockoutSeconds > 0
+              ? `Too many attempts. Try again in ${Math.floor(lockoutSeconds / 60)}m ${lockoutSeconds % 60}s.`
+              : error}
           </div>
         )}
 
@@ -79,11 +94,15 @@ function AdminLoginForm() {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || lockoutSeconds > 0}
             className="brutal-btn w-full bg-[#00F5D4] text-black py-3 text-xs"
           >
             <Lock className="w-4 h-4" />
-            {loading ? 'Signing In...' : 'Sign In'}
+            {lockoutSeconds > 0
+              ? `Locked (${lockoutSeconds}s)`
+              : loading
+                ? 'Signing In...'
+                : 'Sign In'}
           </button>
         </form>
       </div>

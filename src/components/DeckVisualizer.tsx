@@ -12,7 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import { INK_CONFIG, formatPlayedBy } from '@/lib/constants';
-import { formatDreambornExport } from '@/lib/deck-parser';
+import { formatDreambornExport, sanitizeExternalUrl } from '@/lib/deck-parser';
 import { generateCardArtworkFallback } from '@/lib/seed-data';
 import { Deck, ParsedCardEntry } from '@/lib/types';
 import { InkPairBadges } from './InkBadge';
@@ -201,7 +201,8 @@ export function DeckVisualizer({ deck }: DeckVisualizerProps) {
   };
 
   return (
-    <div className="brutal-card p-5 space-y-5">
+    <>
+      <div className="brutal-card p-5 space-y-5">
       {/* Deck Header */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b-[2px] border-black pb-4">
         <div className="space-y-1.5">
@@ -222,17 +223,21 @@ export function DeckVisualizer({ deck }: DeckVisualizerProps) {
               );
             })()}
             <InkPairBadges inkOne={deck.ink_one} inkTwo={deck.ink_two} />
-            {deck.deck_link && (
-              <a
-                href={deck.deck_link}
-                target="_blank"
-                rel="noreferrer"
-                className="brutal-tag bg-[#1C0F2F] text-white hover:bg-[#00F5D4] hover:text-black"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                Deck Link
-              </a>
-            )}
+            {(() => {
+              const safeDeckLink = sanitizeExternalUrl(deck.deck_link);
+              if (!safeDeckLink) return null;
+              return (
+                <a
+                  href={safeDeckLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="brutal-tag bg-[#1C0F2F] text-white hover:bg-[#00F5D4] hover:text-black"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  Deck Link
+                </a>
+              );
+            })()}
           </div>
           <h3 className="text-2xl font-black uppercase tracking-tight text-white">
             {deck.deck_name}
@@ -391,11 +396,8 @@ export function DeckVisualizer({ deck }: DeckVisualizerProps) {
                         }}
                         className="w-full h-full object-cover"
                       />
-                      <span className="absolute top-1.5 left-1.5 bg-[#121212] text-[#00F5D4] border border-black px-1.5 py-0.5 font-mono font-black text-xs">
+                      <span className="absolute top-1.5 right-1.5 bg-[#121212] text-[#00F5D4] border border-black px-1.5 py-0.5 font-mono font-black text-xs shadow-[1.5px_1.5px_0px_#000000]">
                         {card.count}x
-                      </span>
-                      <span className="absolute top-1.5 right-1.5 bg-[#FFB703] text-black border border-black w-6 h-6 flex items-center justify-center font-black text-xs">
-                        {card.cost}
                       </span>
                       <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                         <span className="brutal-tag bg-[#00F5D4] text-black">
@@ -459,11 +461,12 @@ export function DeckVisualizer({ deck }: DeckVisualizerProps) {
           )}
         </>
       )}
+      </div>
 
       {/* Card Detail Modal */}
       {selectedCard && (
         <div
-          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+          className="fixed inset-0 !mt-0 z-[60] bg-black/80 flex items-center justify-center p-4"
           onClick={() => setSelectedCard(null)}
         >
           <div
@@ -510,6 +513,6 @@ export function DeckVisualizer({ deck }: DeckVisualizerProps) {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
