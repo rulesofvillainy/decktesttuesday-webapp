@@ -238,28 +238,44 @@ export async function syncYouTubeStreams(options?: {
     pageToken = data.nextPageToken;
   }
 
-  // Sort oldest to newest so we can assign sequential episode numbers (1..N)
+  // Sort oldest to newest
   discoveredVideos.sort((a, b) =>
     a.publishedDate.localeCompare(b.publishedDate)
   );
 
+  const [excludedStreams, existingEpisodes] = await Promise.all([
+    getExcludedYouTubeStreams(),
+    getEpisodes({ includeHidden: true }),
+  ]);
+  const excludedIds = new Set(
+    excludedStreams.map((item) => item.youtube_video_id)
+  );
+  const existingByYtId = new Map(
+    existingEpisodes
+      .filter((e): e is Episode & { youtube_video_id: string } =>
+        Boolean(e.youtube_video_id)
+      )
+      .map((e) => [e.youtube_video_id, e])
+  );
+
   let importedCount = 0;
-  for (let i = 0; i < discoveredVideos.length; i++) {
-    const v = discoveredVideos[i];
-    const epNumber = i + 1;
-    const ep = await createOrUpdateEpisode({
+  for (const v of discoveredVideos) {
+    if (excludedIds.has(v.videoId)) {
+      continue;
+    }
+    const existingEp = existingByYtId.get(v.videoId);
+    await createOrUpdateEpisode({
       youtube_video_id: v.videoId,
       title: v.title,
-      episode_number: epNumber,
+      episode_number: existingEp ? existingEp.episode_number : null,
       stream_date: v.publishedDate,
       vod_url: `https://www.youtube.com/watch?v=${v.videoId}`,
-      is_live: false,
-      is_upcoming: false,
-      is_hidden: false,
+      is_live: existingEp ? existingEp.is_live : false,
+      is_upcoming: existingEp ? existingEp.is_upcoming : false,
+      is_hidden: existingEp ? existingEp.is_hidden : false,
       set_name: extractSetFromTitle(v.title),
       format_tag: inferFormatTag(v.title),
     });
-    await ensureEpisodePlaceholders(ep.id);
     importedCount++;
   }
 
@@ -283,16 +299,19 @@ export async function syncYouTubeStreams(options?: {
       const activeDttLive = liveItems.find((item) =>
         (item.snippet?.title || '').toLowerCase().includes('deck test tuesday')
       );
-      if (activeDttLive?.id?.videoId) {
+      if (
+        activeDttLive?.id?.videoId &&
+        !excludedIds.has(activeDttLive.id.videoId)
+      ) {
         const liveEp = await createOrUpdateEpisode({
           youtube_video_id: activeDttLive.id.videoId,
           title: activeDttLive.snippet?.title || 'Deck Test Tuesday LIVE',
           stream_date: new Date().toISOString().split('T')[0],
           vod_url: `https://www.youtube.com/watch?v=${activeDttLive.id.videoId}`,
           is_live: true,
+          is_upcoming: false,
           format_tag: inferFormatTag(activeDttLive.snippet?.title || ''),
         });
-        await ensureEpisodePlaceholders(liveEp.id);
         await setEpisodeLiveStatus(liveEp.id, true);
         detectedLiveEpisode = { ...liveEp, is_live: true };
       }
@@ -305,7 +324,7 @@ export async function syncYouTubeStreams(options?: {
   return {
     synced: true,
     mode: 'youtube-api',
-    message: `Imported/updated ${importedCount} real "Deck Test Tuesday" streams from Rules of Villainy with placeholder decks & matches.`,
+    message: `Synced ${importedCount} non-excluded "Deck Test Tuesday" streams from Rules of Villainy.`,
     importedCount,
     liveEpisode:
       detectedLiveEpisode || allEpisodes.find((e) => e.is_live) || null,
