@@ -55,6 +55,150 @@ function inferFormatTag(title: string): EpisodeFormatTag {
   return extractFormatFromTitle(title);
 }
 
+const YOUTUBE_ALLOWED_HOSTS = new Set([
+  'youtube.com',
+  'www.youtube.com',
+  'm.youtube.com',
+  'music.youtube.com',
+  'youtu.be',
+  'www.youtube-nocookie.com',
+]);
+
+const VIDEO_ID_REGEX = /^[a-zA-Z0-9_-]{11}$/;
+
+/**
+ * Extracts and validates an 11-character YouTube video ID from a YouTube URL or raw ID.
+ * Only permits known YouTube hostnames to prevent SSRF against arbitrary URLs.
+ */
+export function extractYouTubeVideoId(input: string): string | null {
+  const trimmed = String(input || '').trim();
+  if (!trimmed) return null;
+  if (VIDEO_ID_REGEX.test(trimmed)) return trimmed;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(
+      /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
+    );
+  } catch {
+    return null;
+  }
+
+  const host = parsed.hostname.toLowerCase();
+  if (!YOUTUBE_ALLOWED_HOSTS.has(host)) return null;
+
+  if (host === 'youtu.be') {
+    const seg = parsed.pathname.split('/').filter(Boolean)[0] || '';
+    return VIDEO_ID_REGEX.test(seg) ? seg : null;
+  }
+
+  const vParam = parsed.searchParams.get('v');
+  if (vParam && VIDEO_ID_REGEX.test(vParam)) {
+    return vParam;
+  }
+
+  const pathMatch = parsed.pathname.match(
+    /^\/(?:live|embed|shorts|v)\/([a-zA-Z0-9_-]{11})(?:\/|$)/
+  );
+  if (pathMatch && VIDEO_ID_REGEX.test(pathMatch[1])) {
+    return pathMatch[1];
+  }
+
+  return null;
+}
+
+function toChicagoDateString(rawDate?: string | null): string {
+  if (rawDate && /^\d{4}-\d{2}-\d{2}$/.test(rawDate.trim())) {
+    return rawDate.trim();
+  }
+  const parsed = rawDate ? new Date(rawDate) : new Date();
+  const safeDate = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Chicago',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(safeDate);
+  } catch {
+    return safeDate.toISOString().split('T')[0];
+  }
+}
+
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/gi, "'")
+    .replace(/&#(\d+);/g, (_, num) => {
+      const code = Number(num);
+      return Number.isFinite(code) ? String.fromCharCode(code) : _;
+    });
+}
+
+function extractBalancedJsonObject(
+  source: string,
+  markerRegex: RegExp
+): Record<string, unknown> | null {
+  const match = markerRegex.exec(source);
+  if (!match) return null;
+  const start = source.indexOf('{', match.index);
+  if (start < 0) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < source.length; i++) {
+    const ch = source[i];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === '\\') {
+        escaped = true;
+      } else if (ch === '"') {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+    if (ch === '{') {
+      depth++;
+    } else if (ch === '}') {
+      depth--;
+      if (depth === 0) {
+        try {
+          return JSON.parse(source.slice(start, i + 1)) as Record<
+            string,
+            unknown
+          >;
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function formatYouTubeApiError(status: number, bodyText: string): string {
+  try {
+    const parsed = JSON.parse(bodyText) as {
+      error?: { message?: string; status?: string };
+    };
+    const msg = parsed?.error?.message;
+    if (msg) return `YouTube API (${status}): ${msg}`;
+  } catch {
+    // fall through
+  }
+  return `YouTube API (${status})`;
+}
+
 /**
  * Ensures an episode has placeholder Decks ("Deck 1", "Deck 2", "Deck 3")
  * and placeholder Matches ("Match 1", "Match 2", "Match 3") so old DTT
@@ -203,7 +347,7 @@ export async function syncYouTubeStreams(options?: {
 
     if (!res.ok) {
       const errText = await res.text();
-      throw new Error(`YouTube API error (${res.status}): ${errText}`);
+      throw new Error(formatYouTubeApiError(res.status, errText));
     }
 
     const data = (await res.json()) as {
@@ -279,6 +423,54 @@ export async function syncYouTubeStreams(options?: {
     importedCount++;
   }
 
+  // Check upcoming broadcasts so newly scheduled streams sync when API allows
+  try {
+    const upParams = new URLSearchParams({
+      part: 'snippet',
+      channelId,
+      eventType: 'upcoming',
+      type: 'video',
+      key: apiKey,
+    });
+    const upRes = await fetch(
+      `https://www.googleapis.com/youtube/v3/search?${upParams.toString()}`,
+      { headers: { Accept: 'application/json' } }
+    );
+    if (upRes.ok) {
+      const upData = (await upRes.json()) as { items?: YouTubeSearchItem[] };
+      const upItems = Array.isArray(upData.items) ? upData.items : [];
+      for (const item of upItems) {
+        const title = item.snippet?.title || '';
+        const videoId = item.id?.videoId;
+        if (
+          !videoId ||
+          excludedIds.has(videoId) ||
+          !title.toLowerCase().includes('deck test tuesday')
+        ) {
+          continue;
+        }
+        const existingEp = existingByYtId.get(videoId);
+        await createOrUpdateEpisode({
+          youtube_video_id: videoId,
+          title,
+          episode_number: existingEp ? existingEp.episode_number : null,
+          stream_date: toChicagoDateString(item.snippet?.publishedAt),
+          vod_url: `https://www.youtube.com/watch?v=${videoId}`,
+          is_live: existingEp ? existingEp.is_live : false,
+          is_upcoming: existingEp ? existingEp.is_upcoming : true,
+          is_hidden: existingEp ? existingEp.is_hidden : false,
+          set_name: extractSetFromTitle(title),
+          format_tag: inferFormatTag(title),
+        });
+        if (!existingEp) {
+          importedCount++;
+        }
+      }
+    }
+  } catch {
+    // Ignore upcoming check failure if quota or eventType search is restricted
+  }
+
   // Also check if the channel has an active LIVE broadcast right now
   let detectedLiveEpisode: Episode | null = null;
   try {
@@ -306,10 +498,11 @@ export async function syncYouTubeStreams(options?: {
         const liveEp = await createOrUpdateEpisode({
           youtube_video_id: activeDttLive.id.videoId,
           title: activeDttLive.snippet?.title || 'Deck Test Tuesday LIVE',
-          stream_date: new Date().toISOString().split('T')[0],
+          stream_date: toChicagoDateString(),
           vod_url: `https://www.youtube.com/watch?v=${activeDttLive.id.videoId}`,
           is_live: true,
           is_upcoming: false,
+          is_hidden: false,
           format_tag: inferFormatTag(activeDttLive.snippet?.title || ''),
         });
         await setEpisodeLiveStatus(liveEp.id, true);
@@ -347,6 +540,7 @@ export async function getYouTubeImportData(): Promise<{
   totalAvailable: number;
   totalExcluded: number;
   totalImported: number;
+  apiWarning?: string;
 }> {
   try {
     dns.setDefaultResultOrder('ipv4first');
@@ -380,10 +574,13 @@ export async function getYouTubeImportData(): Promise<{
       totalAvailable: 0,
       totalExcluded: excludedStreams.length,
       totalImported: existingIds.size,
+      apiWarning:
+        'YOUTUBE_API_KEY is not configured. Auto-scan is unavailable — paste a YouTube stream URL below to import manually.',
     };
   }
 
   const allFoundVideos: Map<string, YouTubeStreamCandidate> = new Map();
+  const apiWarnings: string[] = [];
 
   // 1. Check Live Broadcasts
   try {
@@ -398,7 +595,9 @@ export async function getYouTubeImportData(): Promise<{
       `https://www.googleapis.com/youtube/v3/search?${liveParams.toString()}`,
       { headers: { Accept: 'application/json' } }
     );
-    if (liveRes.ok) {
+    if (!liveRes.ok) {
+      apiWarnings.push(formatYouTubeApiError(liveRes.status, await liveRes.text()));
+    } else {
       const data = (await liveRes.json()) as { items?: YouTubeSearchItem[] };
       const items = Array.isArray(data.items) ? data.items : [];
       for (const item of items) {
@@ -408,7 +607,7 @@ export async function getYouTubeImportData(): Promise<{
         allFoundVideos.set(videoId, {
           youtube_video_id: videoId,
           title,
-          stream_date: (item.snippet?.publishedAt || new Date().toISOString()).split('T')[0],
+          stream_date: toChicagoDateString(item.snippet?.publishedAt),
           published_at: item.snippet?.publishedAt,
           vod_url: `https://www.youtube.com/watch?v=${videoId}`,
           thumbnail_url: (item.snippet as any)?.thumbnails?.medium?.url || (item.snippet as any)?.thumbnails?.default?.url,
@@ -436,7 +635,9 @@ export async function getYouTubeImportData(): Promise<{
       `https://www.googleapis.com/youtube/v3/search?${upParams.toString()}`,
       { headers: { Accept: 'application/json' } }
     );
-    if (upRes.ok) {
+    if (!upRes.ok) {
+      apiWarnings.push(formatYouTubeApiError(upRes.status, await upRes.text()));
+    } else {
       const data = (await upRes.json()) as { items?: YouTubeSearchItem[] };
       const items = Array.isArray(data.items) ? data.items : [];
       for (const item of items) {
@@ -447,7 +648,7 @@ export async function getYouTubeImportData(): Promise<{
           allFoundVideos.set(videoId, {
             youtube_video_id: videoId,
             title,
-            stream_date: (item.snippet?.publishedAt || new Date().toISOString()).split('T')[0],
+            stream_date: toChicagoDateString(item.snippet?.publishedAt),
             published_at: item.snippet?.publishedAt,
             vod_url: `https://www.youtube.com/watch?v=${videoId}`,
             thumbnail_url: (item.snippet as any)?.thumbnails?.medium?.url || (item.snippet as any)?.thumbnails?.default?.url,
@@ -483,7 +684,10 @@ export async function getYouTubeImportData(): Promise<{
         `https://www.googleapis.com/youtube/v3/playlistItems?${params.toString()}`,
         { headers: { Accept: 'application/json' } }
       );
-      if (!res.ok) break;
+      if (!res.ok) {
+        apiWarnings.push(formatYouTubeApiError(res.status, await res.text()));
+        break;
+      }
       const data = (await res.json()) as {
         items?: YouTubePlaylistItem[];
         nextPageToken?: string;
@@ -505,7 +709,7 @@ export async function getYouTubeImportData(): Promise<{
           allFoundVideos.set(videoId, {
             youtube_video_id: videoId,
             title,
-            stream_date: publishedRaw ? publishedRaw.split('T')[0] : new Date().toISOString().split('T')[0],
+            stream_date: toChicagoDateString(publishedRaw),
             published_at: publishedRaw,
             vod_url: `https://www.youtube.com/watch?v=${videoId}`,
             thumbnail_url:
@@ -553,12 +757,265 @@ export async function getYouTubeImportData(): Promise<{
     available.push(item);
   }
 
+  const uniqueWarnings = Array.from(new Set(apiWarnings));
   return {
     available,
     excluded: excludedStreams,
     totalAvailable: available.length,
     totalExcluded: excludedStreams.length,
     totalImported: existingIds.size,
+    apiWarning:
+      uniqueWarnings.length > 0
+        ? `${uniqueWarnings[0]} — You can still import any stream directly by pasting its YouTube URL below.`
+        : undefined,
+  };
+}
+
+/**
+ * Looks up metadata for a specific YouTube video/stream URL (or video ID).
+ * Uses the YouTube Data API v3 when permitted and falls back to YouTube's
+ * public watch metadata & oEmbed endpoint so upcoming/newly scheduled streams
+ * can always be imported by URL even if search indexing or API keys fail.
+ */
+export async function lookupYouTubeStreamByUrl(urlOrId: string): Promise<{
+  candidate: YouTubeStreamCandidate;
+  metadataFound: boolean;
+  alreadyImported: boolean;
+  existingEpisodeId?: string;
+  isExcluded: boolean;
+  source: 'youtube-api' | 'youtube-page' | 'manual-fallback';
+  warning?: string;
+}> {
+  const videoId = extractYouTubeVideoId(urlOrId);
+  if (!videoId) {
+    throw new Error(
+      'Please enter a valid YouTube stream URL or 11-character video ID.'
+    );
+  }
+
+  const [existingEpisodes, excludedStreams] = await Promise.all([
+    getEpisodes({ includeHidden: true }),
+    getExcludedYouTubeStreams(),
+  ]);
+
+  const existingEp = existingEpisodes.find(
+    (e) => e.youtube_video_id === videoId
+  );
+  const isExcluded = excludedStreams.some(
+    (item) => item.youtube_video_id === videoId
+  );
+
+  const canonicalUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  const defaultThumb = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+  const apiKey = process.env.YOUTUBE_API_KEY?.trim();
+
+  // 1. Try YouTube Data API v3 videos endpoint first if configured
+  if (apiKey) {
+    try {
+      const params = new URLSearchParams({
+        part: 'snippet,liveStreamingDetails',
+        id: videoId,
+        key: apiKey,
+      });
+      const res = await fetch(
+        `https://www.googleapis.com/youtube/v3/videos?${params.toString()}`,
+        {
+          headers: { Accept: 'application/json' },
+          signal: AbortSignal.timeout(8000),
+        }
+      );
+      if (res.ok) {
+        const data = (await res.json()) as {
+          items?: Array<{
+            id?: string;
+            snippet?: {
+              title?: string;
+              publishedAt?: string;
+              liveBroadcastContent?: 'live' | 'upcoming' | 'none';
+              thumbnails?: {
+                medium?: { url?: string };
+                default?: { url?: string };
+              };
+            };
+            liveStreamingDetails?: {
+              scheduledStartTime?: string;
+              actualStartTime?: string;
+            };
+          }>;
+        };
+        const item = data.items?.[0];
+        if (item?.snippet?.title) {
+          const title = item.snippet.title.trim();
+          const broadcast = item.snippet.liveBroadcastContent || 'none';
+          const rawDate =
+            item.liveStreamingDetails?.actualStartTime ||
+            item.liveStreamingDetails?.scheduledStartTime ||
+            item.snippet.publishedAt;
+          return {
+            candidate: {
+              youtube_video_id: videoId,
+              title,
+              stream_date: toChicagoDateString(rawDate),
+              published_at: rawDate,
+              vod_url: canonicalUrl,
+              thumbnail_url:
+                item.snippet.thumbnails?.medium?.url ||
+                item.snippet.thumbnails?.default?.url ||
+                defaultThumb,
+              set_name: extractSetFromTitle(title),
+              format_tag: inferFormatTag(title),
+              is_live: broadcast === 'live',
+              is_upcoming: broadcast === 'upcoming',
+            },
+            metadataFound: true,
+            alreadyImported: Boolean(existingEp),
+            existingEpisodeId: existingEp?.id,
+            isExcluded,
+            source: 'youtube-api',
+          };
+        }
+      }
+    } catch {
+      // Fall through to YouTube watch page lookup
+    }
+  }
+
+  // 2. Fallback: public YouTube watch page + oEmbed lookup (hardcoded YouTube origin)
+  try {
+    const watchRes = await fetch(canonicalUrl, {
+      headers: {
+        'Accept-Language': 'en-US,en;q=0.9',
+        'User-Agent':
+          'Mozilla/5.0 (compatible; DeckTestTuesdayBot/1.0; +https://dtt.villainy.ink)',
+      },
+      signal: AbortSignal.timeout(8000),
+    });
+
+    if (watchRes.ok) {
+      const html = await watchRes.text();
+      const player = extractBalancedJsonObject(
+        html,
+        /(?:var\s+)?ytInitialPlayerResponse\s*=\s*/
+      ) as {
+        videoDetails?: {
+          title?: string;
+          isLive?: boolean;
+          isUpcoming?: boolean;
+        };
+        microformat?: {
+          playerMicroformatRenderer?: {
+            title?: { simpleText?: string };
+            publishDate?: string;
+            uploadDate?: string;
+            liveBroadcastDetails?: {
+              isLiveNow?: boolean;
+              startTimestamp?: string;
+            };
+          };
+        };
+      } | null;
+
+      const vd = player?.videoDetails;
+      const micro = player?.microformat?.playerMicroformatRenderer;
+
+      const ogTitleMatch =
+        html.match(/<meta\s+property=["']og:title["']\s+content=["']([^"']+)["']/i) ||
+        html.match(/<meta\s+content=["']([^"']+)["']\s+property=["']og:title["']/i);
+      const htmlTitleMatch = html.match(/<title>(.*?)<\/title>/i);
+      const strippedHtmlTitle = htmlTitleMatch?.[1]
+        ? decodeHtmlEntities(htmlTitleMatch[1])
+            .replace(/\s*-\s*YouTube\s*$/i, '')
+            .trim()
+        : '';
+
+      let title = (
+        vd?.title ||
+        micro?.title?.simpleText ||
+        (ogTitleMatch?.[1] ? decodeHtmlEntities(ogTitleMatch[1]).trim() : '') ||
+        (strippedHtmlTitle && strippedHtmlTitle.toLowerCase() !== 'youtube'
+          ? strippedHtmlTitle
+          : '')
+      ).trim();
+
+      if (!title) {
+        try {
+          const oembedRes = await fetch(
+            `https://www.youtube.com/oembed?url=${encodeURIComponent(canonicalUrl)}&format=json`,
+            { signal: AbortSignal.timeout(5000) }
+          );
+          if (oembedRes.ok) {
+            const oembedJson = (await oembedRes.json()) as {
+              title?: string;
+              html?: string;
+            };
+            const iframeTitleMatch = oembedJson.html?.match(/\btitle="([^"]+)"/i);
+            title = (
+              oembedJson.title ||
+              (iframeTitleMatch?.[1]
+                ? decodeHtmlEntities(iframeTitleMatch[1])
+                : '')
+            ).trim();
+          }
+        } catch {
+          // Ignore oEmbed failure
+        }
+      }
+
+      if (title) {
+        const isLive = Boolean(
+          micro?.liveBroadcastDetails?.isLiveNow || vd?.isLive
+        );
+        const isUpcoming = !isLive && Boolean(vd?.isUpcoming);
+        const rawDate =
+          micro?.liveBroadcastDetails?.startTimestamp ||
+          micro?.publishDate ||
+          micro?.uploadDate;
+
+        return {
+          candidate: {
+            youtube_video_id: videoId,
+            title,
+            stream_date: toChicagoDateString(rawDate),
+            published_at: rawDate,
+            vod_url: canonicalUrl,
+            thumbnail_url: defaultThumb,
+            set_name: extractSetFromTitle(title),
+            format_tag: inferFormatTag(title),
+            is_live: isLive,
+            is_upcoming: isUpcoming,
+          },
+          metadataFound: true,
+          alreadyImported: Boolean(existingEp),
+          existingEpisodeId: existingEp?.id,
+          isExcluded,
+          source: 'youtube-page',
+        };
+      }
+    }
+  } catch {
+    // Fall through to editable manual fallback
+  }
+
+  // 3. Fallback when YouTube blocks metadata (e.g. private/unlisted restrictions)
+  return {
+    candidate: {
+      youtube_video_id: videoId,
+      title: existingEp?.title || '',
+      stream_date: existingEp?.stream_date || toChicagoDateString(),
+      vod_url: canonicalUrl,
+      thumbnail_url: defaultThumb,
+      set_name: existingEp?.set_name || 'Hyperia City',
+      format_tag: existingEp?.format_tag || 'Core',
+      is_live: existingEp?.is_live || false,
+      is_upcoming: existingEp ? existingEp.is_upcoming : true,
+    },
+    metadataFound: false,
+    alreadyImported: Boolean(existingEp),
+    existingEpisodeId: existingEp?.id,
+    isExcluded,
+    source: 'manual-fallback',
+    warning:
+      'Could not automatically read title/date from YouTube (the stream may be private or rate-limited). Enter the details below and click Import.',
   };
 }
 

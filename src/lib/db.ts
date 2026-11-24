@@ -1478,6 +1478,78 @@ export async function updateEpisode(
   return updated;
 }
 
+export async function deleteEpisode(id: string): Promise<{
+  deleted: boolean;
+  title?: string;
+  youtube_video_id?: string | null;
+}> {
+  if (!id) return { deleted: false };
+
+  if (isPostgresConfigured()) {
+    await ensurePostgresInitialized();
+    const pool = getPool();
+    const { rows } = await pool.query(
+      `SELECT id, title, youtube_video_id FROM episodes WHERE id = $1`,
+      [id]
+    );
+    if (!rows[0]) {
+      return { deleted: false };
+    }
+    const { title, youtube_video_id } = rows[0] as {
+      title: string;
+      youtube_video_id: string | null;
+    };
+
+    await pool.query(
+      `DELETE FROM app_settings WHERE key = 'obs_active_episode_id' AND value = $1`,
+      [id]
+    );
+    const { rowCount } = await pool.query(`DELETE FROM episodes WHERE id = $1`, [
+      id,
+    ]);
+    if ((rowCount || 0) > 0 && youtube_video_id) {
+      await addExcludedYouTubeStream({
+        youtube_video_id,
+        title,
+      });
+    }
+    return {
+      deleted: (rowCount || 0) > 0,
+      title,
+      youtube_video_id,
+    };
+  }
+
+  const db = readLocalDb();
+  const existing = db.episodes.find((e) => e.id === id);
+  if (!existing) return { deleted: false };
+
+  db.episodes = db.episodes.filter((e) => e.id !== id);
+  db.episode_decks = db.episode_decks.filter((ed) => ed.episode_id !== id);
+  db.matches = db.matches.filter((m) => m.episode_id !== id);
+  db.decks = db.decks.map((d) =>
+    d.episode_id === id ? { ...d, episode_id: null } : d
+  );
+  if (db.settings?.obs_active_episode_id === id) {
+    delete db.settings.obs_active_episode_id;
+  }
+  writeLocalDb(db);
+
+  if (existing.youtube_video_id) {
+    await addExcludedYouTubeStream({
+      youtube_video_id: existing.youtube_video_id,
+      title: existing.title,
+      published_date: existing.stream_date,
+    });
+  }
+
+  return {
+    deleted: true,
+    title: existing.title,
+    youtube_video_id: existing.youtube_video_id,
+  };
+}
+
 export async function setEpisodeLiveStatus(
   episodeId: string,
   isLive: boolean

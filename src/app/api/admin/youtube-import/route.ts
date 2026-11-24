@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isAdminAuthenticated } from '@/lib/auth';
 import { importSelectedStreams } from '@/lib/youtube';
+import { broadcastRealtimeEvent } from '@/lib/realtime';
 
 export async function POST(req: NextRequest) {
   const isAdmin = await isAdminAuthenticated();
@@ -19,6 +20,12 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await importSelectedStreams(streams);
+    broadcastRealtimeEvent('episode_created', {
+      importedCount: result.importedCount,
+    });
+    broadcastRealtimeEvent('episode_updated', {
+      importedCount: result.importedCount,
+    });
     return NextResponse.json({
       success: true,
       message: `Successfully imported ${result.importedCount} stream${

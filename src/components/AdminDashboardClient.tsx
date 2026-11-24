@@ -225,6 +225,8 @@ export function AdminDashboardClient({
       event.type === 'deck_unassigned' ||
       event.type === 'deck_created' ||
       event.type === 'deck_updated' ||
+      event.type === 'episode_created' ||
+      event.type === 'episode_deleted' ||
       event.type === 'episode_updated' ||
       event.type === 'episode_live_toggled'
     ) {
@@ -288,23 +290,40 @@ export function AdminDashboardClient({
   const [importTab, setImportTab] = useState<'available' | 'excluded'>('available');
   const [ytLoading, setYtLoading] = useState(false);
   const [ytImporting, setYtImporting] = useState(false);
+  const [ytApiWarning, setYtApiWarning] = useState<string | null>(null);
   const [ytCandidates, setYtCandidates] = useState<YouTubeStreamCandidate[]>([]);
   const [ytExcluded, setYtExcluded] = useState<ExcludedYouTubeStream[]>([]);
   const [selectedVideoIds, setSelectedVideoIds] = useState<Set<string>>(new Set());
   const [importSearch, setImportSearch] = useState('');
   const [ytActionBusyId, setYtActionBusyId] = useState<string | null>(null);
 
+  // Manual YouTube URL import state
+  const [manualUrlInput, setManualUrlInput] = useState('');
+  const [manualLookupBusy, setManualLookupBusy] = useState(false);
+  const [manualLookupError, setManualLookupError] = useState<string | null>(null);
+  const [manualCandidate, setManualCandidate] = useState<YouTubeStreamCandidate | null>(null);
+  const [manualLookupMeta, setManualLookupMeta] = useState<{
+    alreadyImported: boolean;
+    isExcluded: boolean;
+    metadataFound: boolean;
+    warning?: string;
+  } | null>(null);
+
   const fetchYouTubeData = async () => {
     setYtLoading(true);
     try {
       const res = await fetch('/api/admin/youtube-streams');
+      const data = await res.json();
       if (res.ok) {
-        const data = await res.json();
         setYtCandidates(data.available || []);
         setYtExcluded(data.excluded || []);
+        setYtApiWarning(data.apiWarning || null);
+      } else {
+        setYtApiWarning(data.error || 'Failed to scan YouTube channel.');
       }
     } catch (err) {
       console.error('Failed to fetch YouTube streams', err);
+      setYtApiWarning('Network error while scanning YouTube channel.');
     } finally {
       setYtLoading(false);
     }
@@ -314,7 +333,123 @@ export function AdminDashboardClient({
     setImportModalOpen(true);
     setSelectedVideoIds(new Set());
     setImportSearch('');
+    setYtApiWarning(null);
+    setManualUrlInput('');
+    setManualLookupError(null);
+    setManualCandidate(null);
+    setManualLookupMeta(null);
     fetchYouTubeData();
+  };
+
+  const handleLookupManualUrl = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const trimmed = manualUrlInput.trim();
+    if (!trimmed) return;
+    setManualLookupBusy(true);
+    setManualLookupError(null);
+    setManualCandidate(null);
+    setManualLookupMeta(null);
+    try {
+      const res = await fetch('/api/admin/youtube-streams', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: trimmed }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setManualLookupError(data.error || 'Could not inspect that YouTube URL.');
+        return;
+      }
+      setManualCandidate(data.candidate || null);
+      setManualLookupMeta({
+        alreadyImported: Boolean(data.alreadyImported),
+        isExcluded: Boolean(data.isExcluded),
+        metadataFound: Boolean(data.metadataFound),
+        warning: data.warning,
+      });
+    } catch {
+      setManualLookupError('Network error while looking up YouTube URL.');
+    } finally {
+      setManualLookupBusy(false);
+    }
+  };
+
+  const handleImportManualCandidate = async () => {
+    if (!manualCandidate || !manualCandidate.title.trim()) {
+      setManualLookupError('Please enter a stream title before importing.');
+      return;
+    }
+    setYtImporting(true);
+    setManualLookupError(null);
+    try {
+      const res = await fetch('/api/admin/youtube-import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ streams: [manualCandidate] }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setManualLookupError(data.error || 'Failed to import stream.');
+        return;
+      }
+      setYtCandidates((prev) =>
+        prev.filter((c) => c.youtube_video_id !== manualCandidate.youtube_video_id)
+      );
+      setYtExcluded((prev) =>
+        prev.filter((x) => x.youtube_video_id !== manualCandidate.youtube_video_id)
+      );
+      setBannerMsg(
+        data.message || `Imported "${manualCandidate.title}" into Deck Test Tuesday!`
+      );
+      setManualUrlInput('');
+      setManualCandidate(null);
+      setManualLookupMeta(null);
+      await reloadAll();
+    } catch {
+      setManualLookupError('Network error while importing stream.');
+    } finally {
+      setYtImporting(false);
+    }
+  };
+
+  const handleDeleteEpisode = async (ep: EnrichedEpisode) => {
+    const matchWarn =
+      ep.matches.length > 0
+        ? ` This will also remove ${ep.matches.length} logged match${
+            ep.matches.length === 1 ? '' : 'es'
+          } for this stream.`
+        : '';
+    if (
+      !confirm(
+        `Permanently delete stream "${ep.title}"?${matchWarn} Your decks in the Deck Library will stay intact.`
+      )
+    ) {
+      return;
+    }
+    setBusyId(ep.id);
+    setBannerMsg(null);
+    try {
+      const res = await fetch(
+        `/api/episodes?id=${encodeURIComponent(ep.id)}`,
+        { method: 'DELETE' }
+      );
+      if (res.ok) {
+        if (expandedEpisodeId === ep.id) setExpandedEpisodeId(null);
+        if (selectedEpisodeId === ep.id) setSelectedEpisodeId('');
+        if (obsActiveEpisodeId === ep.id) setObsActiveEpisodeId(null);
+        await reloadAll();
+        setBannerMsg(`Deleted stream "${ep.title}".`);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setBannerMsg(
+          `Delete failed: ${err.error || 'Could not delete stream.'}`
+        );
+      }
+    } catch {
+      setBannerMsg('Network error while deleting stream.');
+    } finally {
+      setBusyId(null);
+    }
   };
 
   const handleToggleSelectVideo = (videoId: string) => {
@@ -748,9 +883,17 @@ export function AdminDashboardClient({
     setSyncingYt(true);
     try {
       const res = await fetch('/api/cron/youtube-sync', { method: 'POST' });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setBannerMsg(
+          `Sync failed: ${data.error || 'Could not sync streams from YouTube.'}`
+        );
+        return;
+      }
       await reloadAll();
       setBannerMsg(data.message || 'Synced streams from YouTube!');
+    } catch {
+      setBannerMsg('Network error while syncing streams from YouTube.');
     } finally {
       setSyncingYt(false);
     }
@@ -1363,6 +1506,18 @@ export function AdminDashboardClient({
                           <ExternalLink className="w-3.5 h-3.5" />
                           <span>Public Page</span>
                         </Link>
+
+                        {/* Delete Stream */}
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => handleDeleteEpisode(ep)}
+                          className="brutal-btn bg-[#1C0F2F] text-neutral-300 hover:bg-[#D62828] hover:text-white px-2.5 py-1.5 text-xs border-[2px] border-black transition-colors"
+                          title="Permanently delete this stream"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Delete</span>
+                        </button>
                       </div>
                     </div>
 
@@ -1967,6 +2122,203 @@ export function AdminDashboardClient({
               </button>
             </div>
 
+            {/* Manual Import by YouTube URL */}
+            <div className="p-3.5 sm:p-4 bg-[#190C28] border-b-[2px] border-black space-y-2.5 shrink-0">
+              <form
+                onSubmit={handleLookupManualUrl}
+                className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2"
+              >
+                <div className="flex-1">
+                  <label className="block text-[10px] font-mono font-black uppercase text-[#00F5D4] mb-1">
+                    Manual Import by YouTube Stream URL or Video ID
+                  </label>
+                  <input
+                    type="text"
+                    value={manualUrlInput}
+                    onChange={(e) => setManualUrlInput(e.target.value)}
+                    placeholder="https://www.youtube.com/watch?v=... or video ID"
+                    className="brutal-input text-xs py-2 w-full bg-[#160D24]"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={!manualUrlInput.trim() || manualLookupBusy}
+                  className="brutal-btn bg-[#FFB703] text-black hover:bg-[#ffca3a] px-4 py-2 text-xs font-black sm:mt-4 disabled:opacity-40 shrink-0"
+                >
+                  {manualLookupBusy ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Looking up...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Search className="w-3.5 h-3.5" />
+                      <span>Look Up URL</span>
+                    </>
+                  )}
+                </button>
+              </form>
+
+              {ytApiWarning && (
+                <div className="px-3 py-2 bg-[#2B1228] border border-[#FFB703]/70 text-[11px] font-mono text-[#FFB703]">
+                  Notice: {ytApiWarning}
+                </div>
+              )}
+
+              {manualLookupError && (
+                <div className="px-3 py-2 bg-[#3A101E] border border-[#FF2E93] text-xs font-mono text-[#FF4B91]">
+                  {manualLookupError}
+                </div>
+              )}
+
+              {manualCandidate && (
+                <div className="p-3 bg-[#241438] border-[2px] border-[#00F5D4] space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono">
+                      <span className="brutal-tag bg-[#00F5D4] text-black font-black">
+                        VIDEO ID: {manualCandidate.youtube_video_id}
+                      </span>
+                      {manualLookupMeta?.alreadyImported && (
+                        <span className="brutal-tag bg-[#FFB703] text-black font-black">
+                          ALREADY IMPORTED (WILL UPDATE)
+                        </span>
+                      )}
+                      {manualLookupMeta?.isExcluded && (
+                        <span className="brutal-tag bg-[#FF2E93] text-white font-black">
+                          EXCLUDED (IMPORT WILL RESTORE)
+                        </span>
+                      )}
+                    </div>
+                    <a
+                      href={manualCandidate.vod_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[11px] font-mono text-[#FF2E93] hover:underline flex items-center gap-1"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                      <span>Open on YouTube</span>
+                    </a>
+                  </div>
+
+                  {manualLookupMeta?.warning && (
+                    <div className="text-[11px] font-mono text-[#FFB703]">
+                      {manualLookupMeta.warning}
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                    <div className="sm:col-span-5">
+                      <label className="block text-[10px] font-mono uppercase text-neutral-300 mb-0.5">
+                        Stream Title *
+                      </label>
+                      <input
+                        type="text"
+                        value={manualCandidate.title}
+                        onChange={(e) =>
+                          setManualCandidate((prev) =>
+                            prev ? { ...prev, title: e.target.value } : prev
+                          )
+                        }
+                        placeholder="Deck Test Tuesday - Set [Week #] - Title"
+                        className="brutal-input text-xs py-1.5 w-full bg-[#160D24]"
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-[10px] font-mono uppercase text-neutral-300 mb-0.5">
+                        Air Date
+                      </label>
+                      <input
+                        type="date"
+                        value={manualCandidate.stream_date}
+                        onChange={(e) =>
+                          setManualCandidate((prev) =>
+                            prev ? { ...prev, stream_date: e.target.value } : prev
+                          )
+                        }
+                        className="brutal-input text-xs py-1.5 w-full bg-[#160D24]"
+                      />
+                    </div>
+                    <div className="sm:col-span-3">
+                      <label className="block text-[10px] font-mono uppercase text-neutral-300 mb-0.5">
+                        Lorcana Set
+                      </label>
+                      <input
+                        type="text"
+                        list="set-options"
+                        value={manualCandidate.set_name}
+                        onChange={(e) =>
+                          setManualCandidate((prev) =>
+                            prev ? { ...prev, set_name: e.target.value } : prev
+                          )
+                        }
+                        className="brutal-input text-xs py-1.5 w-full bg-[#160D24]"
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-[10px] font-mono uppercase text-neutral-300 mb-0.5">
+                        Status
+                      </label>
+                      <select
+                        value={
+                          manualCandidate.is_live
+                            ? 'live'
+                            : manualCandidate.is_upcoming
+                              ? 'upcoming'
+                              : 'archive'
+                        }
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setManualCandidate((prev) =>
+                            prev
+                              ? {
+                                  ...prev,
+                                  is_live: v === 'live',
+                                  is_upcoming: v === 'upcoming',
+                                }
+                              : prev
+                          );
+                        }}
+                        className="brutal-input text-xs py-1.5 w-full bg-[#160D24]"
+                      >
+                        <option value="upcoming">Upcoming</option>
+                        <option value="live">Live Now</option>
+                        <option value="archive">Past / VOD</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setManualCandidate(null);
+                        setManualLookupMeta(null);
+                        setManualLookupError(null);
+                      }}
+                      className="brutal-btn bg-[#1C0F2F] text-neutral-300 hover:text-white px-3 py-1.5 text-xs"
+                    >
+                      Clear
+                    </button>
+                    <button
+                      type="button"
+                      disabled={ytImporting || !manualCandidate.title.trim()}
+                      onClick={handleImportManualCandidate}
+                      className="brutal-btn bg-[#00F5D4] text-black hover:bg-[#32fad9] px-4 py-1.5 text-xs font-black disabled:opacity-40"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>
+                        {ytImporting
+                          ? 'Importing...'
+                          : manualLookupMeta?.alreadyImported
+                            ? 'Update Stream'
+                            : 'Import Stream'}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {/* Sub-Header Tabs */}
             <div className="flex items-center border-b-[2px] border-black bg-[#1C0F2F] px-4 pt-2.5 gap-2 shrink-0 overflow-x-auto">
               <button
@@ -2049,7 +2401,7 @@ export function AdminDashboardClient({
                 </div>
 
                 {/* Stream Candidates Scroll Area */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-[250px] max-h-[50vh]">
+                <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-[120px]">
                   {ytLoading ? (
                     <div className="p-12 text-center space-y-3">
                       <RefreshCw className="w-8 h-8 text-[#00F5D4] animate-spin mx-auto" />
@@ -2238,7 +2590,7 @@ export function AdminDashboardClient({
                 </div>
 
                 {/* Excluded List */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-[250px] max-h-[50vh]">
+                <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-[120px]">
                   {filteredExcluded.length === 0 ? (
                     <div className="p-10 text-center space-y-2 bg-[#1C0F2F] border-[2px] border-black">
                       <div className="text-base font-black uppercase text-white">

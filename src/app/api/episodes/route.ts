@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { isAdminAuthenticated } from '@/lib/auth';
 import {
   createOrUpdateEpisode,
+  deleteEpisode,
   getEnrichedEpisodeById,
   getEnrichedEpisodes,
   getFeaturedEpisode,
@@ -140,6 +141,50 @@ export async function PATCH(req: NextRequest) {
   } catch (err: unknown) {
     const message =
       err instanceof Error ? err.message : 'Failed to update episode';
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  const isAdmin = await isAdminAuthenticated();
+  if (!isAdmin) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    let episodeId = req.nextUrl.searchParams.get('id')?.trim() || '';
+    if (!episodeId) {
+      try {
+        const body = await req.json();
+        episodeId = String(body.episodeId || body.id || '').trim();
+      } catch {
+        // Query param was absent and no JSON body provided
+      }
+    }
+
+    if (!episodeId) {
+      return NextResponse.json(
+        { error: 'Episode id is required' },
+        { status: 400 }
+      );
+    }
+
+    const result = await deleteEpisode(episodeId);
+    if (!result.deleted) {
+      return NextResponse.json({ error: 'Episode not found' }, { status: 404 });
+    }
+
+    broadcastRealtimeEvent('episode_deleted', { episodeId });
+    broadcastRealtimeEvent('episode_updated', { episodeId, deleted: true });
+
+    return NextResponse.json({
+      deleted: true,
+      episodeId,
+      title: result.title,
+    });
+  } catch (err: unknown) {
+    const message =
+      err instanceof Error ? err.message : 'Failed to delete episode';
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
