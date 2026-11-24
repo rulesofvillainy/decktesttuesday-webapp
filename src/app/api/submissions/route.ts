@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isAdminAuthenticated } from '@/lib/auth';
 import {
+  approveSubmissionToLibrary,
   assignSubmissionToEpisode,
   createSubmission,
   getSubmissions,
@@ -13,6 +14,7 @@ import {
 } from '@/lib/deck-parser';
 import { parseAndResolveDecklist } from '@/lib/lorcast';
 import { checkSubmissionRateLimit, getClientIp } from '@/lib/rate-limit';
+import { broadcastRealtimeEvent } from '@/lib/realtime';
 import {
   LorcanaInk,
   PilotName,
@@ -172,6 +174,8 @@ export async function POST(req: NextRequest) {
       notes,
     });
 
+    broadcastRealtimeEvent('submission_created', { submission });
+
     return NextResponse.json({ submission });
   } catch (err: unknown) {
     const message =
@@ -196,6 +200,50 @@ export async function PATCH(req: NextRequest) {
         { error: 'Submission ID is required' },
         { status: 400 }
       );
+    }
+
+    if (
+      action === 'approve' ||
+      (action === 'status' && body.status === 'Approved')
+    ) {
+      const allSubs = await getSubmissions('All');
+      const targetSub = allSubs.find((s) => s.id === id);
+      if (!targetSub) {
+        return NextResponse.json(
+          { error: 'Submission not found' },
+          { status: 404 }
+        );
+      }
+
+      let parsedCards = targetSub.parsed_cards || [];
+      if (parsedCards.length === 0 && targetSub.raw_decklist) {
+        const resolved = await parseAndResolveDecklist(
+          targetSub.raw_decklist,
+          targetSub.ink_one
+        );
+        parsedCards = resolved.parsedCards;
+      }
+
+      const approved = await approveSubmissionToLibrary(id, parsedCards);
+      if (!approved) {
+        return NextResponse.json(
+          { error: 'Submission not found' },
+          { status: 404 }
+        );
+      }
+
+      if (!approved.alreadyInLibrary) {
+        broadcastRealtimeEvent('deck_created', { deck: approved.deck });
+      }
+      broadcastRealtimeEvent('submission_updated', {
+        submission: approved.submission,
+      });
+
+      return NextResponse.json({
+        submission: approved.submission,
+        deck: approved.deck,
+        alreadyInLibrary: approved.alreadyInLibrary,
+      });
     }
 
     if (action === 'assign') {
@@ -232,11 +280,23 @@ export async function PATCH(req: NextRequest) {
         pilot,
         parsedCards
       );
+      broadcastRealtimeEvent('deck_created', { deck: assigned?.deck });
+      broadcastRealtimeEvent('deck_assigned', { episodeId });
+      broadcastRealtimeEvent('submission_updated', {
+        submission: assigned?.submission,
+      });
       return NextResponse.json({ assigned });
     }
 
     const status = (body.status as SubmissionStatus) || 'Approved';
     const updated = await updateSubmissionStatus(id, status);
+    if (!updated) {
+      return NextResponse.json(
+        { error: 'Submission not found' },
+        { status: 404 }
+      );
+    }
+    broadcastRealtimeEvent('submission_updated', { submission: updated });
     return NextResponse.json({ submission: updated });
   } catch (err: unknown) {
     const message =

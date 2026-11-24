@@ -1764,6 +1764,69 @@ export async function updateSubmissionStatus(
   return target;
 }
 
+export function getSubmissionDeckName(sub: Pick<DeckSubmission, 'deck_name' | 'submitter_name'>): string {
+  const base = sub.deck_name.trim();
+  const bySuffix = `(by ${sub.submitter_name.trim()})`;
+  return base.toLowerCase().includes(bySuffix.toLowerCase())
+    ? base
+    : `${base} ${bySuffix}`;
+}
+
+export async function approveSubmissionToLibrary(
+  submissionId: string,
+  parsedCards: ParsedCardEntry[] = []
+): Promise<{
+  deck: Deck;
+  submission: DeckSubmission;
+  alreadyInLibrary: boolean;
+} | null> {
+  const submissions = await getSubmissions('All');
+  const sub = submissions.find((s) => s.id === submissionId);
+  if (!sub) return null;
+
+  const expectedName = getSubmissionDeckName(sub);
+  const resolvedCards =
+    parsedCards.length > 0 ? parsedCards : sub.parsed_cards || [];
+
+  const allDecks = await getDecks();
+  const existingDeck = allDecks.find(
+    (d) =>
+      d.ink_one === sub.ink_one &&
+      d.ink_two === sub.ink_two &&
+      (d.deck_name.trim().toLowerCase() === expectedName.toLowerCase() ||
+        (d.deck_name.trim().toLowerCase() === sub.deck_name.trim().toLowerCase() &&
+          (d.built_by || '').trim().toLowerCase() ===
+            sub.submitter_name.trim().toLowerCase()))
+  );
+
+  const deck =
+    existingDeck ||
+    (await createDeck({
+      episode_id: null,
+      pilot: 'Community Sub',
+      built_by: sub.submitter_name,
+      deck_name: expectedName,
+      ink_one: sub.ink_one,
+      ink_two: sub.ink_two,
+      deck_link: sub.deck_link || null,
+      notes: sub.notes || null,
+      raw_decklist: sub.raw_decklist || '',
+      parsed_cards: resolvedCards,
+    }));
+
+  const updatedSub = await updateSubmissionStatus(
+    submissionId,
+    'Approved',
+    parsedCards.length > 0 ? parsedCards : undefined
+  );
+
+  return {
+    deck,
+    submission: updatedSub || { ...sub, status: 'Approved' },
+    alreadyInLibrary: Boolean(existingDeck),
+  };
+}
+
 export async function assignSubmissionToEpisode(
   submissionId: string,
   episodeId: string,
@@ -1777,7 +1840,8 @@ export async function assignSubmissionToEpisode(
   const deck = await createDeck({
     episode_id: episodeId,
     pilot,
-    deck_name: `${sub.deck_name} (by ${sub.submitter_name})`,
+    built_by: sub.submitter_name,
+    deck_name: getSubmissionDeckName(sub),
     ink_one: sub.ink_one,
     ink_two: sub.ink_two,
     deck_link: sub.deck_link || null,

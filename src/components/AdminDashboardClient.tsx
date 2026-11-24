@@ -50,7 +50,6 @@ import {
   LorcanaInk,
   Match,
   MatchFormat,
-  PilotName,
   SubmissionStatus,
   YouTubeStreamCandidate,
 } from '@/lib/types';
@@ -124,9 +123,6 @@ export function AdminDashboardClient({
 
   // Submissions State
   const [statusFilter, setStatusFilter] = useState<SubmissionStatus | 'All'>('Pending');
-  const [assignSubModal, setAssignSubModal] = useState<DeckSubmission | null>(null);
-  const [assignSubEpId, setAssignSubEpId] = useState<string>(initialEpisodes[0]?.id || '');
-  const [assignSubPilot, setAssignSubPilot] = useState<PilotName>('Andy');
 
   // OBS Overlay Active Assignment State
   const [obsActiveEpisodeId, setObsActiveEpisodeId] = useState<string | null>(null);
@@ -204,14 +200,19 @@ export function AdminDashboardClient({
   };
 
   const reloadAll = async () => {
-    const [epRes, dkRes] = await Promise.all([
+    const [epRes, dkRes, subRes] = await Promise.all([
       fetch('/api/episodes?includeHidden=true'),
       fetch('/api/decks?all=true'),
+      fetch('/api/submissions'),
     ]);
-    const epData = await epRes.json();
-    const dkData = await dkRes.json();
+    const [epData, dkData, subData] = await Promise.all([
+      epRes.json(),
+      dkRes.json(),
+      subRes.json(),
+    ]);
     if (epData.episodes) setEpisodes(epData.episodes);
     if (dkData.decks) setDecks(dkData.decks);
+    if (subData.submissions) setSubmissions(subData.submissions);
     router.refresh();
   };
 
@@ -225,6 +226,9 @@ export function AdminDashboardClient({
       event.type === 'deck_unassigned' ||
       event.type === 'deck_created' ||
       event.type === 'deck_updated' ||
+      event.type === 'deck_deleted' ||
+      event.type === 'submission_created' ||
+      event.type === 'submission_updated' ||
       event.type === 'episode_created' ||
       event.type === 'episode_deleted' ||
       event.type === 'episode_updated' ||
@@ -811,8 +815,40 @@ export function AdminDashboardClient({
   // ---------------------------------------------------------------------------
   // SUBMISSIONS & RETENTION
   // ---------------------------------------------------------------------------
+  const isSubmissionInLibrary = (sub: DeckSubmission): boolean => {
+    const base = sub.deck_name.trim().toLowerCase();
+    const bySuffix = `(by ${sub.submitter_name.trim()})`.toLowerCase();
+    const expectedName = base.includes(bySuffix) ? base : `${base} ${bySuffix}`;
+    const submitter = sub.submitter_name.trim().toLowerCase();
+    return decks.some(
+      (d) =>
+        d.ink_one === sub.ink_one &&
+        d.ink_two === sub.ink_two &&
+        (d.deck_name.trim().toLowerCase() === expectedName ||
+          (d.deck_name.trim().toLowerCase() === base &&
+            (d.built_by || '').trim().toLowerCase() === submitter))
+    );
+  };
+
+  const handleInspectSubmission = (sub: DeckSubmission) => {
+    setInspectingDeck({
+      id: sub.id,
+      pilot: 'Community Sub',
+      built_by: sub.submitter_name,
+      deck_name: `${sub.deck_name} (by ${sub.submitter_name})`,
+      ink_one: sub.ink_one,
+      ink_two: sub.ink_two,
+      deck_link: sub.deck_link || null,
+      notes: sub.notes || null,
+      raw_decklist: sub.raw_decklist || '',
+      parsed_cards: Array.isArray(sub.parsed_cards) ? sub.parsed_cards : [],
+      created_at: sub.created_at,
+    });
+  };
+
   const handleStatusUpdate = async (id: string, status: SubmissionStatus) => {
     setBusyId(id);
+    setBannerMsg(null);
     try {
       const res = await fetch('/api/submissions', {
         method: 'PATCH',
@@ -824,37 +860,20 @@ export function AdminDashboardClient({
         setSubmissions((prev) =>
           prev.map((s) => (s.id === id ? data.submission : s))
         );
-      }
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  const handleAssignSubToStream = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!assignSubModal || !assignSubEpId) return;
-    setBusyId(assignSubModal.id);
-    try {
-      const res = await fetch('/api/submissions', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: assignSubModal.id,
-          action: 'assign',
-          episodeId: assignSubEpId,
-          pilot: assignSubPilot,
-        }),
-      });
-      const data = await res.json();
-      if (res.ok && data.assigned) {
-        setSubmissions((prev) =>
-          prev.map((s) =>
-            s.id === assignSubModal.id ? data.assigned.submission : s
-          )
+        if (status === 'Approved') {
+          await reloadAll();
+          setBannerMsg(
+            data.alreadyInLibrary
+              ? `"${data.submission.deck_name}" is already in the Deck Manager.`
+              : `Approved "${data.submission.deck_name}" and added it to your Deck Manager!`
+          );
+        } else {
+          setBannerMsg(`Marked "${data.submission.deck_name}" as ${status}.`);
+        }
+      } else {
+        setBannerMsg(
+          `Submission update failed: ${data.error || 'Could not update submission.'}`
         );
-        setAssignSubModal(null);
-        await reloadAll();
-        setBannerMsg(`Built and assigned "${assignSubModal.deck_name}" to stream!`);
       }
     } finally {
       setBusyId(null);
@@ -1080,7 +1099,13 @@ export function AdminDashboardClient({
           }`}
         >
           <FolderPlus className="w-4 h-4" />
-          3. Viewer Submissions ({submissions.length})
+          <span>
+            3. Viewer Submissions ({submissions.length}
+            {submissions.filter((s) => s.status === 'Pending').length > 0
+              ? ` • ${submissions.filter((s) => s.status === 'Pending').length} Pending`
+              : ''}
+            )
+          </span>
         </button>
 
         <button
@@ -1167,6 +1192,11 @@ export function AdminDashboardClient({
                     <h3 className="font-black text-lg uppercase text-white leading-tight">
                       {deck.deck_name}
                     </h3>
+                    {deck.built_by && (
+                      <div className="text-[11px] font-mono text-neutral-400 mt-0.5">
+                        Builder: <span className="text-neutral-200 font-bold">{deck.built_by}</span>
+                      </div>
+                    )}
                   </div>
 
                   {deck.notes && (
@@ -1799,9 +1829,14 @@ export function AdminDashboardClient({
       {activeTab === 'submissions' && (
         <div className="brutal-card p-5 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b-[2px] border-black pb-3">
-            <h2 className="text-lg font-black uppercase text-white">
-              Viewer Deck Submissions ({filteredSubmissions.length})
-            </h2>
+            <div>
+              <h2 className="text-lg font-black uppercase text-white">
+                Viewer Deck Submissions ({filteredSubmissions.length})
+              </h2>
+              <p className="text-xs text-neutral-400 mt-0.5">
+                Inspect submitted lists below. Approving a deck adds it to your Deck Manager so you can prep and assign it to a stream later.
+              </p>
+            </div>
             <div className="flex flex-wrap gap-1.5">
               {(['Pending', 'Approved', 'Played', 'Archived', 'All'] as const).map((st) => (
                 <button
@@ -1824,75 +1859,118 @@ export function AdminDashboardClient({
             </div>
           ) : (
             <div className="space-y-3">
-              {filteredSubmissions.map((sub) => (
-                <div
-                  key={sub.id}
-                  className="bg-[#181920] border-[2px] border-black p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4"
-                >
-                  <div className="space-y-1.5">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="brutal-tag bg-[#FFB703] text-black">
-                        {sub.status}
-                      </span>
-                      <InkPairBadges inkOne={sub.ink_one} inkTwo={sub.ink_two} size="sm" />
-                      <span className="text-xs font-mono text-neutral-400">
-                        by {sub.submitter_name} • {sub.format_category}
-                      </span>
-                    </div>
-                    <div className="text-base font-black uppercase text-white">
-                      {sub.deck_name}
-                    </div>
-                    {sub.notes && (
-                      <p className="text-xs text-neutral-300">{sub.notes}</p>
-                    )}
-                    {(() => {
-                      const safeDeckLink = sanitizeExternalUrl(sub.deck_link);
-                      if (!safeDeckLink) return null;
-                      return (
-                        <a
-                          href={safeDeckLink}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-xs font-mono text-[#00F5D4] underline"
-                        >
-                          <ExternalLink className="w-3 h-3" />
-                          {safeDeckLink}
-                        </a>
-                      );
-                    })()}
-                  </div>
+              {filteredSubmissions.map((sub) => {
+                const submittedCardCount = Array.isArray(sub.parsed_cards)
+                  ? sub.parsed_cards.reduce((sum, c) => sum + c.count, 0)
+                  : 0;
+                const canViewDeck =
+                  submittedCardCount > 0 ||
+                  Boolean(sub.raw_decklist?.trim()) ||
+                  Boolean(sub.deck_link);
+                const inLibrary = isSubmissionInLibrary(sub);
+                const isBusy = busyId === sub.id;
 
-                  <div className="flex flex-wrap items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      disabled={busyId === sub.id}
-                      onClick={() => handleStatusUpdate(sub.id, 'Approved')}
-                      className="brutal-btn bg-[#00F5D4] text-black px-3 py-1.5 text-xs"
-                    >
-                      <Check className="w-3.5 h-3.5" />
-                      Approve
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busyId === sub.id}
-                      onClick={() => setAssignSubModal(sub)}
-                      className="brutal-btn bg-[#FFB703] text-black px-3 py-1.5 text-xs"
-                    >
-                      <FolderPlus className="w-3.5 h-3.5" />
-                      Add to Manager &amp; Assign
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busyId === sub.id}
-                      onClick={() => handleStatusUpdate(sub.id, 'Archived')}
-                      className="brutal-btn bg-[#D62828] text-white px-3 py-1.5 text-xs"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                      Archive
-                    </button>
+                return (
+                  <div
+                    key={sub.id}
+                    className="bg-[#181920] border-[2px] border-black p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4"
+                  >
+                    <div className="space-y-1.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="brutal-tag bg-[#FFB703] text-black">
+                          {sub.status}
+                        </span>
+                        <InkPairBadges inkOne={sub.ink_one} inkTwo={sub.ink_two} size="sm" />
+                        <span className="text-xs font-mono text-neutral-400">
+                          by {sub.submitter_name} • {sub.format_category} •{' '}
+                          {submittedCardCount > 0
+                            ? `${submittedCardCount} cards`
+                            : sub.submission_type === 'link'
+                              ? 'Link Only'
+                              : 'Text List'}
+                        </span>
+                      </div>
+                      <div className="text-base font-black uppercase text-white">
+                        {sub.deck_name}
+                      </div>
+                      {sub.notes && (
+                        <p className="text-xs text-neutral-300">{sub.notes}</p>
+                      )}
+                      {(() => {
+                        const safeDeckLink = sanitizeExternalUrl(sub.deck_link);
+                        if (!safeDeckLink) return null;
+                        return (
+                          <a
+                            href={safeDeckLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-xs font-mono text-[#00F5D4] underline"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            {safeDeckLink}
+                          </a>
+                        );
+                      })()}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2 shrink-0">
+                      {canViewDeck && (
+                        <button
+                          type="button"
+                          onClick={() => handleInspectSubmission(sub)}
+                          className="brutal-btn bg-[#241438] text-[#00F5D4] hover:bg-[#321c4d] px-3 py-1.5 text-xs border-[2px] border-black"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          View Deck
+                        </button>
+                      )}
+
+                      {sub.status === 'Pending' && (
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => handleStatusUpdate(sub.id, 'Approved')}
+                          className="brutal-btn bg-[#00F5D4] text-black px-3 py-1.5 text-xs"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          {isBusy ? 'Approving...' : 'Approve & Add to Decks'}
+                        </button>
+                      )}
+
+                      {sub.status === 'Approved' && (
+                        inLibrary ? (
+                          <span className="brutal-tag bg-[#1C0F2F] text-[#00F5D4] border border-[#00F5D4]/60 px-2.5 py-1 text-xs">
+                            <Check className="w-3.5 h-3.5" />
+                            In Deck Manager
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => handleStatusUpdate(sub.id, 'Approved')}
+                            className="brutal-btn bg-[#FFB703] text-black px-3 py-1.5 text-xs"
+                          >
+                            <FolderPlus className="w-3.5 h-3.5" />
+                            {isBusy ? 'Adding...' : 'Add to Deck Manager'}
+                          </button>
+                        )
+                      )}
+
+                      {sub.status !== 'Archived' && (
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => handleStatusUpdate(sub.id, 'Archived')}
+                          className="brutal-btn bg-[#D62828] text-white px-3 py-1.5 text-xs"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          Archive
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -2033,56 +2111,6 @@ export function AdminDashboardClient({
 
       {/* INSPECT CARDS MODAL */}
       <DeckModal deck={inspectingDeck} onClose={() => setInspectingDeck(null)} />
-
-      {/* ASSIGN SUBMISSION MODAL */}
-      {assignSubModal && (
-        <div className="fixed inset-0 !mt-0 z-50 bg-black/80 flex items-center justify-center p-4">
-          <form onSubmit={handleAssignSubToStream} className="brutal-card max-w-md w-full p-5 space-y-4">
-            <div className="flex items-center justify-between border-b border-black pb-2">
-              <h3 className="text-base font-black uppercase text-white">
-                Add to Deck Library &amp; Assign to Stream
-              </h3>
-              <button
-                type="button"
-                onClick={() => setAssignSubModal(null)}
-                className="brutal-btn bg-[#FFB703] text-black p-1"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="text-xs text-neutral-300">
-              Building <strong>{assignSubModal.deck_name}</strong> by {assignSubModal.submitter_name}.
-            </div>
-
-            <select
-              value={assignSubEpId}
-              onChange={(e) => setAssignSubEpId(e.target.value)}
-              className="brutal-input text-xs"
-            >
-              {episodes.map((ep) => (
-                <option key={ep.id} value={ep.id}>
-                  [{ep.stream_date}] {ep.title}
-                </option>
-              ))}
-            </select>
-
-            <select
-              value={assignSubPilot}
-              onChange={(e) => setAssignSubPilot(e.target.value as PilotName)}
-              className="brutal-input text-xs"
-            >
-              <option value="Andy">Andy</option>
-              <option value="Kirsten">Kirsten</option>
-              <option value="Community Sub">Community Sub</option>
-            </select>
-
-            <button type="submit" className="brutal-btn w-full bg-[#00F5D4] text-black py-2.5 text-xs">
-              Confirm &amp; Build Deck
-            </button>
-          </form>
-        </div>
-      )}
 
       {/* =================================================================== */}
       {/* YOUTUBE IMPORT MODAL / POPOVER */}

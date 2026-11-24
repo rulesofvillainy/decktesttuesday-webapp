@@ -305,8 +305,30 @@ export function DeckVisualizer({ deck }: DeckVisualizerProps) {
       </div>
 
       {cards.length === 0 ? (
-        <div className="bg-[#1C0F2F] border-[2px] border-black p-4 text-xs font-mono text-neutral-300">
-          Decklist cards have not been entered yet for this deck.
+        <div className="bg-[#1C0F2F] border-[2px] border-black p-4 space-y-3 text-xs font-mono text-neutral-300">
+          {deck.raw_decklist?.trim() ? (
+            <>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[#00F5D4] font-bold uppercase text-[11px]">
+                  Submitted Decklist Text
+                </span>
+                <button
+                  type="button"
+                  onClick={handleCopyDreamborn}
+                  className="brutal-btn bg-[#00F5D4] text-black px-2.5 py-1 text-[11px]"
+                >
+                  {copied ? 'Copied!' : 'Copy Text'}
+                </button>
+              </div>
+              <pre className="whitespace-pre-wrap bg-[#120A1E] border border-black p-3 text-xs text-neutral-200 max-h-80 overflow-y-auto">
+                {deck.raw_decklist.trim()}
+              </pre>
+            </>
+          ) : (
+            <div>
+              Decklist cards have not been entered yet for this deck.
+            </div>
+          )}
         </div>
       ) : (
         <>
