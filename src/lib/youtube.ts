@@ -6,6 +6,7 @@ import {
   createMatch,
   createOrUpdateEpisode,
   getDecks,
+  getEpisodeById,
   getEpisodes,
   getExcludedYouTubeStreams,
   getMatches,
@@ -16,6 +17,8 @@ import {
   Episode,
   EpisodeFormatTag,
   ExcludedYouTubeStream,
+  YouTubeLiveChatMessage,
+  YouTubeLiveChatResponse,
   YouTubeStreamCandidate,
 } from './types';
 
@@ -1061,4 +1064,380 @@ export async function importSelectedStreams(
     importedCount: importedEpisodes.length,
     episodes: importedEpisodes,
   };
+}
+
+// =============================================================================
+// YOUTUBE LIVE CHAT READER (Shared Server Cache, Read-Only)
+// =============================================================================
+
+interface LiveChatCacheEntry {
+  videoId: string;
+  activeLiveChatId: string | null;
+  chatIdExpiresAt: number;
+  nextPageToken: string | null;
+  nextAllowedPollAt: number;
+  pollingIntervalMs: number;
+  liveChatActive: boolean;
+  statusMessage?: string;
+  lastError?: string;
+  messages: YouTubeLiveChatMessage[];
+}
+
+declare global {
+  var __dttLiveChatCache: Map<string, LiveChatCacheEntry> | undefined;
+}
+
+const liveChatCache: Map<string, LiveChatCacheEntry> =
+  globalThis.__dttLiveChatCache || new Map<string, LiveChatCacheEntry>();
+if (process.env.NODE_ENV !== 'production') {
+  globalThis.__dttLiveChatCache = liveChatCache;
+}
+
+function formatChatTimeLabel(iso?: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Chicago',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(d);
+  } catch {
+    return d.toISOString().slice(11, 16);
+  }
+}
+
+export async function fetchYouTubeLiveChatForEpisode(options: {
+  episodeId?: string;
+  videoId?: string;
+  forceRefresh?: boolean;
+}): Promise<YouTubeLiveChatResponse> {
+  const episode = options.episodeId
+    ? await getEpisodeById(options.episodeId, { includeHidden: true })
+    : null;
+
+  const resolvedVideoId =
+    extractYouTubeVideoId(options.videoId || '') ||
+    extractYouTubeVideoId(episode?.youtube_video_id || '') ||
+    extractYouTubeVideoId(episode?.vod_url || '');
+
+  const vodUrl =
+    episode?.vod_url?.trim() ||
+    (resolvedVideoId
+      ? `https://www.youtube.com/watch?v=${resolvedVideoId}`
+      : null);
+
+  const apiKey = process.env.YOUTUBE_API_KEY?.trim();
+
+  if (!resolvedVideoId) {
+    return {
+      configured: Boolean(apiKey),
+      episodeId: episode?.id || options.episodeId || null,
+      videoId: null,
+      vodUrl,
+      liveChatActive: false,
+      pollingIntervalMs: 6000,
+      statusMessage:
+        'This stream does not have a YouTube URL or video ID linked yet.',
+      messages: [],
+    };
+  }
+
+  if (!apiKey) {
+    return {
+      configured: false,
+      episodeId: episode?.id || options.episodeId || null,
+      videoId: resolvedVideoId,
+      vodUrl,
+      liveChatActive: false,
+      pollingIntervalMs: 10000,
+      statusMessage:
+        'YOUTUBE_API_KEY is not configured in the server environment.',
+      messages: [],
+    };
+  }
+
+  const now = Date.now();
+  let entry = liveChatCache.get(resolvedVideoId);
+  if (!entry) {
+    entry = {
+      videoId: resolvedVideoId,
+      activeLiveChatId: null,
+      chatIdExpiresAt: 0,
+      nextPageToken: null,
+      nextAllowedPollAt: 0,
+      pollingIntervalMs: 6000,
+      liveChatActive: false,
+      messages: [],
+    };
+    liveChatCache.set(resolvedVideoId, entry);
+  }
+
+  // Respect server-side rate throttle (even on manual refresh allow 2s cooldown)
+  const cooldownFloor = options.forceRefresh ? 2000 : 0;
+  if (
+    (!options.forceRefresh && now < entry.nextAllowedPollAt) ||
+    (options.forceRefresh && now < entry.nextAllowedPollAt - (entry.pollingIntervalMs - cooldownFloor))
+  ) {
+    return {
+      configured: true,
+      episodeId: episode?.id || options.episodeId || null,
+      videoId: resolvedVideoId,
+      vodUrl,
+      liveChatActive: entry.liveChatActive,
+      pollingIntervalMs: entry.pollingIntervalMs,
+      statusMessage: entry.statusMessage,
+      error: entry.lastError,
+      messages: entry.messages,
+    };
+  }
+
+  // Step 1: Lookup or refresh activeLiveChatId when missing or expired
+  if (!entry.activeLiveChatId || now >= entry.chatIdExpiresAt) {
+    try {
+      const videoParams = new URLSearchParams({
+        part: 'liveStreamingDetails,snippet',
+        id: resolvedVideoId,
+        key: apiKey,
+      });
+      const vRes = await fetch(
+        `https://www.googleapis.com/youtube/v3/videos?${videoParams.toString()}`,
+        {
+          headers: { Accept: 'application/json' },
+          signal: AbortSignal.timeout(8000),
+        }
+      );
+
+      if (!vRes.ok) {
+        const errMsg = formatYouTubeApiError(vRes.status, await vRes.text());
+        entry.lastError = errMsg;
+        entry.nextAllowedPollAt = now + 15000;
+        return {
+          configured: true,
+          episodeId: episode?.id || options.episodeId || null,
+          videoId: resolvedVideoId,
+          vodUrl,
+          liveChatActive: false,
+          pollingIntervalMs: 15000,
+          statusMessage: errMsg,
+          error: errMsg,
+          messages: entry.messages,
+        };
+      }
+
+      const vJson = (await vRes.json()) as {
+        items?: Array<{
+          snippet?: { liveBroadcastContent?: 'live' | 'upcoming' | 'none' };
+          liveStreamingDetails?: { activeLiveChatId?: string };
+        }>;
+      };
+      const item = vJson.items?.[0];
+      const nextChatId = item?.liveStreamingDetails?.activeLiveChatId || null;
+      const broadcastState = item?.snippet?.liveBroadcastContent || 'none';
+
+      if (!nextChatId) {
+        entry.activeLiveChatId = null;
+        entry.liveChatActive = false;
+        entry.chatIdExpiresAt = now + 20000;
+        entry.nextAllowedPollAt = now + 15000;
+        entry.lastError = undefined;
+        entry.statusMessage =
+          broadcastState === 'none'
+            ? 'Broadcast is not live — YouTube live chat is closed for this stream.'
+            : 'YouTube live chat is not active yet for this stream.';
+        return {
+          configured: true,
+          episodeId: episode?.id || options.episodeId || null,
+          videoId: resolvedVideoId,
+          vodUrl,
+          liveChatActive: false,
+          pollingIntervalMs: 15000,
+          statusMessage: entry.statusMessage,
+          messages: entry.messages,
+        };
+      }
+
+      if (entry.activeLiveChatId !== nextChatId) {
+        entry.nextPageToken = null;
+      }
+      entry.activeLiveChatId = nextChatId;
+      entry.chatIdExpiresAt = now + 180000; // re-check video chat ID every 3 min
+      entry.liveChatActive = true;
+      entry.lastError = undefined;
+    } catch (err: unknown) {
+      const msg =
+        err instanceof Error ? err.message : 'Failed to reach YouTube API';
+      entry.lastError = msg;
+      entry.nextAllowedPollAt = now + 10000;
+      return {
+        configured: true,
+        episodeId: episode?.id || options.episodeId || null,
+        videoId: resolvedVideoId,
+        vodUrl,
+        liveChatActive: entry.liveChatActive,
+        pollingIntervalMs: 10000,
+        statusMessage: msg,
+        error: msg,
+        messages: entry.messages,
+      };
+    }
+  }
+
+  // Step 2: Fetch live chat messages using the activeLiveChatId
+  try {
+    const chatParams = new URLSearchParams({
+      liveChatId: entry.activeLiveChatId,
+      part: 'snippet,authorDetails',
+      maxResults: '50',
+      key: apiKey,
+    });
+    if (entry.nextPageToken) {
+      chatParams.set('pageToken', entry.nextPageToken);
+    }
+
+    const cRes = await fetch(
+      `https://www.googleapis.com/youtube/v3/liveChat/messages?${chatParams.toString()}`,
+      {
+        headers: { Accept: 'application/json' },
+        signal: AbortSignal.timeout(8000),
+      }
+    );
+
+    if (!cRes.ok) {
+      const rawErr = await cRes.text();
+      const errMsg = formatYouTubeApiError(cRes.status, rawErr);
+      const lower = rawErr.toLowerCase();
+      if (
+        cRes.status === 404 ||
+        lower.includes('livechatended') ||
+        lower.includes('livechatnotfound') ||
+        lower.includes('livechatdisabled')
+      ) {
+        entry.activeLiveChatId = null;
+        entry.liveChatActive = false;
+        entry.chatIdExpiresAt = now + 20000;
+        entry.nextAllowedPollAt = now + 15000;
+        entry.lastError = undefined;
+        entry.statusMessage =
+          'YouTube live chat ended or is disabled on this stream.';
+      } else {
+        entry.lastError = errMsg;
+        entry.nextAllowedPollAt = now + 12000;
+        entry.statusMessage = errMsg;
+      }
+
+      return {
+        configured: true,
+        episodeId: episode?.id || options.episodeId || null,
+        videoId: resolvedVideoId,
+        vodUrl,
+        liveChatActive: entry.liveChatActive,
+        pollingIntervalMs: Math.max(entry.pollingIntervalMs, 10000),
+        statusMessage: entry.statusMessage,
+        error: entry.lastError,
+        messages: entry.messages,
+      };
+    }
+
+    const chatJson = (await cRes.json()) as {
+      pollingIntervalMillis?: number;
+      nextPageToken?: string;
+      items?: Array<{
+        id?: string;
+        snippet?: {
+          publishedAt?: string;
+          displayMessage?: string;
+          superChatDetails?: { amountDisplayString?: string };
+        };
+        authorDetails?: {
+          displayName?: string;
+          isChatOwner?: boolean;
+          isChatModerator?: boolean;
+          isChatSponsor?: boolean;
+          isVerified?: boolean;
+        };
+      }>;
+    };
+
+    const existingIds = new Set(entry.messages.map((m) => m.id));
+    const items = Array.isArray(chatJson.items) ? chatJson.items : [];
+    for (const item of items) {
+      const msgId = item.id || `${item.snippet?.publishedAt}-${item.authorDetails?.displayName}`;
+      if (existingIds.has(msgId)) continue;
+      existingIds.add(msgId);
+
+      const text = (item.snippet?.displayMessage || '').trim();
+      if (!text) continue;
+
+      const badge: YouTubeLiveChatMessage['authorBadge'] =
+        item.authorDetails?.isChatOwner
+          ? 'OWNER'
+          : item.authorDetails?.isChatModerator
+            ? 'MOD'
+            : item.authorDetails?.isChatSponsor
+              ? 'MEMBER'
+              : item.authorDetails?.isVerified
+                ? 'VERIFIED'
+                : null;
+
+      entry.messages.push({
+        id: msgId,
+        authorName: item.authorDetails?.displayName || 'Viewer',
+        authorBadge: badge,
+        message: text,
+        publishedAt: item.snippet?.publishedAt || new Date().toISOString(),
+        timeLabel: formatChatTimeLabel(item.snippet?.publishedAt),
+        superChatAmount:
+          item.snippet?.superChatDetails?.amountDisplayString || null,
+      });
+    }
+
+    // Keep latest 80 messages in memory
+    if (entry.messages.length > 80) {
+      entry.messages = entry.messages.slice(-80);
+    }
+
+    if (chatJson.nextPageToken) {
+      entry.nextPageToken = chatJson.nextPageToken;
+    }
+
+    const ytInterval = Number(chatJson.pollingIntervalMillis || 5000);
+    entry.pollingIntervalMs = Math.max(ytInterval, 6000);
+    entry.nextAllowedPollAt = now + entry.pollingIntervalMs;
+    entry.liveChatActive = true;
+    entry.lastError = undefined;
+    entry.statusMessage =
+      entry.messages.length === 0
+        ? 'Connected to YouTube Live Chat — waiting for messages...'
+        : undefined;
+
+    return {
+      configured: true,
+      episodeId: episode?.id || options.episodeId || null,
+      videoId: resolvedVideoId,
+      vodUrl,
+      liveChatActive: true,
+      pollingIntervalMs: entry.pollingIntervalMs,
+      statusMessage: entry.statusMessage,
+      messages: entry.messages,
+    };
+  } catch (err: unknown) {
+    const msg =
+      err instanceof Error ? err.message : 'Network error reading live chat';
+    entry.lastError = msg;
+    entry.nextAllowedPollAt = now + 10000;
+    return {
+      configured: true,
+      episodeId: episode?.id || options.episodeId || null,
+      videoId: resolvedVideoId,
+      vodUrl,
+      liveChatActive: entry.liveChatActive,
+      pollingIntervalMs: 10000,
+      statusMessage: msg,
+      error: msg,
+      messages: entry.messages,
+    };
+  }
 }

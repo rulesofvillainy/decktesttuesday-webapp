@@ -4,21 +4,26 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Vibrator;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
+import android.text.style.BackgroundColorSpan;
 import android.text.style.ForegroundColorSpan;
 import android.text.style.StyleSpan;
 import android.util.Log;
 import android.view.LayoutInflater;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
@@ -44,13 +49,29 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
     private static final String TAG = "DeckTestController";
     private static final String PREFS_NAME = "DeckTestPrefs";
+    private static final String PREF_SECTION_ORDER = "section_order_v1";
+    private static final String PREF_COLLAPSED_PREFIX = "collapsed_sec_";
+
+    private static final String SEC_STREAM = "stream";
+    private static final String SEC_CHAT = "chat";
+    private static final String SEC_SETUP = "setup";
+    private static final String SEC_ARENA = "arena";
+    private static final String SEC_HISTORY = "history";
+    private static final List<String> DEFAULT_SECTION_ORDER = Arrays.asList(
+            SEC_STREAM, SEC_CHAT, SEC_SETUP, SEC_ARENA, SEC_HISTORY
+    );
 
     // View Containers
     private ScrollView viewConnect;
@@ -63,12 +84,44 @@ public class MainActivity extends Activity {
     private Button btnConnect;
     private TextView tvConnectStatus;
 
-    // Arena Header Widgets
+    // Top Utility Widgets
     private Button btnToggleLive;
     private Button btnRefresh;
+    private Button btnLayoutLock;
     private Button btnDisconnect;
-    private Spinner spEpisodes;
+    private LinearLayout llReorderHint;
+    private Button btnResetLayout;
     private TextView tvToast;
+
+    // Section Ordering & Collapse Management
+    private LinearLayout llSectionsContainer;
+    private final List<String> sectionOrder = new ArrayList<String>(DEFAULT_SECTION_ORDER);
+    private final Map<String, View> sectionCardMap = new HashMap<String, View>();
+    private final Map<String, View> sectionBodyMap = new HashMap<String, View>();
+    private final Map<String, View> sectionDragControlsMap = new HashMap<String, View>();
+    private final Map<String, TextView> sectionArrowMap = new HashMap<String, TextView>();
+    private final Map<String, TextView> sectionSummaryMap = new HashMap<String, TextView>();
+    private final Set<String> collapsedSections = new HashSet<String>();
+    private boolean isLayoutUnlocked = false;
+
+    // Stream Section Widgets
+    private Spinner spEpisodes;
+    private TextView tvStreamYtLabel;
+
+    // YouTube Chat Section Widgets
+    private TextView tvChatStatusPill;
+    private Button btnChatRefresh;
+    private TextView tvChatUrl;
+    private Button btnChatLatest;
+    private ScrollView svChatMessages;
+    private TextView tvChatEmpty;
+    private TextView tvChatMessages;
+    private final Handler chatPollHandler = new Handler(Looper.getMainLooper());
+    private long chatPollIntervalMs = 6000L;
+    private boolean chatAutoScroll = true;
+    private String currentChatUrl = "";
+    private int lastChatMessageCount = 0;
+    private boolean chatIsLiveActive = false;
 
     // Match Setup Widgets
     private Spinner spAndyDeck;
@@ -87,15 +140,16 @@ public class MainActivity extends Activity {
 
     // Win & Action Buttons
     private Button btnStartMatch;
+    private LinearLayout llWinButtonsRow;
     private Button btnAndyWin;
     private Button btnKirstenWin;
+    private LinearLayout llArenaActionsRow;
     private Button btnUndo;
     private Button btnReset;
     private Button btnSaveMatch;
     private boolean isMatchLive = false;
 
     // Match History Widgets
-    private LinearLayout cardMatchHistory;
     private TextView tvMatchHistoryCount;
     private TextView tvMatchHistoryEmpty;
     private LinearLayout llMatchHistoryList;
@@ -110,7 +164,7 @@ public class MainActivity extends Activity {
     private String currentPassword = "villainy";
 
     // State
-    private String baseUrl = "http://192.168.1.195:3000";
+    private String baseUrl = "http://192.168.1.195:3001";
     private final List<Episode> episodeList = new ArrayList<Episode>();
     private final List<Deck> allDeckList = new ArrayList<Deck>();
     private final List<Deck> currentEpisodeDecks = new ArrayList<Deck>();
@@ -153,9 +207,14 @@ public class MainActivity extends Activity {
         public int episodeNumber;
         public String streamDate;
         public boolean isLive;
+        public String youtubeVideoId;
+        public String vodUrl;
 
         @Override
         public String toString() {
+            if (streamDate != null && !streamDate.isEmpty()) {
+                return "[" + streamDate + "] " + (title != null ? title : "Stream");
+            }
             if (episodeNumber > 0) {
                 return "Ep " + episodeNumber + ": " + title;
             }
@@ -199,12 +258,12 @@ public class MainActivity extends Activity {
     public static int getInkTextColor(String ink) {
         if (ink == null) return Color.parseColor("#9CA3AF");
         String s = ink.trim().toLowerCase();
-        if (s.equals("amber")) return Color.parseColor("#FBBF24");     // Warm Amber Gold
-        if (s.equals("amethyst")) return Color.parseColor("#C084FC");  // Vibrant Amethyst Purple
-        if (s.equals("emerald")) return Color.parseColor("#4ADE80");   // Electric Emerald Green
-        if (s.equals("ruby")) return Color.parseColor("#F87171");      // Vivid Ruby Red
-        if (s.equals("sapphire")) return Color.parseColor("#38BDF8");  // Brilliant Sapphire Cyan/Blue
-        if (s.equals("steel")) return Color.parseColor("#CBD5E1");     // Crisp Steel Metallic Slate
+        if (s.equals("amber")) return Color.parseColor("#FBBF24");
+        if (s.equals("amethyst")) return Color.parseColor("#C084FC");
+        if (s.equals("emerald")) return Color.parseColor("#4ADE80");
+        if (s.equals("ruby")) return Color.parseColor("#F87171");
+        if (s.equals("sapphire")) return Color.parseColor("#38BDF8");
+        if (s.equals("steel")) return Color.parseColor("#CBD5E1");
         return Color.parseColor("#9CA3AF");
     }
 
@@ -322,6 +381,31 @@ public class MainActivity extends Activity {
 
         initViews();
         loadSavedSettings();
+        loadLayoutPrefs();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (viewController != null && viewController.getVisibility() == View.VISIBLE) {
+            scheduleChatPollIfActive();
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        stopChatPoll();
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        stopChatPoll();
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
     private void initViews() {
@@ -336,10 +420,28 @@ public class MainActivity extends Activity {
 
         btnToggleLive = (Button) findViewById(R.id.btn_toggle_live);
         btnRefresh = (Button) findViewById(R.id.btn_refresh);
+        btnLayoutLock = (Button) findViewById(R.id.btn_layout_lock);
         btnDisconnect = (Button) findViewById(R.id.btn_disconnect);
-        spEpisodes = (Spinner) findViewById(R.id.sp_episodes);
+        llReorderHint = (LinearLayout) findViewById(R.id.ll_reorder_hint);
+        btnResetLayout = (Button) findViewById(R.id.btn_reset_layout);
         tvToast = (TextView) findViewById(R.id.tv_toast);
 
+        llSectionsContainer = (LinearLayout) findViewById(R.id.ll_sections_container);
+
+        // Stream widgets
+        spEpisodes = (Spinner) findViewById(R.id.sp_episodes);
+        tvStreamYtLabel = (TextView) findViewById(R.id.tv_stream_yt_label);
+
+        // Chat widgets
+        tvChatStatusPill = (TextView) findViewById(R.id.tv_chat_status_pill);
+        btnChatRefresh = (Button) findViewById(R.id.btn_chat_refresh);
+        tvChatUrl = (TextView) findViewById(R.id.tv_chat_url);
+        btnChatLatest = (Button) findViewById(R.id.btn_chat_latest);
+        svChatMessages = (ScrollView) findViewById(R.id.sv_chat_messages);
+        tvChatEmpty = (TextView) findViewById(R.id.tv_chat_empty);
+        tvChatMessages = (TextView) findViewById(R.id.tv_chat_messages);
+
+        // Match setup widgets
         spAndyDeck = (Spinner) findViewById(R.id.sp_andy_deck);
         spKirstenDeck = (Spinner) findViewById(R.id.sp_kirsten_deck);
         btnSwapDecks = (Button) findViewById(R.id.btn_swap_decks);
@@ -347,6 +449,7 @@ public class MainActivity extends Activity {
         btnBo3 = (Button) findViewById(R.id.btn_bo3);
         btnBo5 = (Button) findViewById(R.id.btn_bo5);
 
+        // Arena widgets
         tvSeriesStatus = (TextView) findViewById(R.id.tv_series_status);
         tvAndyScore = (TextView) findViewById(R.id.tv_andy_score);
         tvKirstenScore = (TextView) findViewById(R.id.tv_kirsten_score);
@@ -354,16 +457,165 @@ public class MainActivity extends Activity {
         tvGameLog = (TextView) findViewById(R.id.tv_game_log);
 
         btnStartMatch = (Button) findViewById(R.id.btn_start_match);
+        llWinButtonsRow = (LinearLayout) findViewById(R.id.ll_win_buttons_row);
         btnAndyWin = (Button) findViewById(R.id.btn_andy_win);
         btnKirstenWin = (Button) findViewById(R.id.btn_kirsten_win);
+        llArenaActionsRow = (LinearLayout) findViewById(R.id.ll_arena_actions_row);
         btnUndo = (Button) findViewById(R.id.btn_undo);
         btnReset = (Button) findViewById(R.id.btn_reset);
         btnSaveMatch = (Button) findViewById(R.id.btn_save_match);
 
-        cardMatchHistory = (LinearLayout) findViewById(R.id.card_match_history);
+        // Match history widgets
         tvMatchHistoryCount = (TextView) findViewById(R.id.tv_match_history_count);
         tvMatchHistoryEmpty = (TextView) findViewById(R.id.tv_match_history_empty);
         llMatchHistoryList = (LinearLayout) findViewById(R.id.ll_match_history_list);
+
+        // Wire collapsible + reorderable sections
+        registerSection(
+                SEC_STREAM,
+                R.id.sec_stream,
+                R.id.ll_body_stream,
+                R.id.ll_drag_stream,
+                R.id.btn_drag_stream,
+                R.id.btn_up_stream,
+                R.id.btn_down_stream,
+                R.id.btn_collapse_stream,
+                R.id.tv_arrow_stream,
+                R.id.tv_summary_stream
+        );
+        registerSection(
+                SEC_CHAT,
+                R.id.sec_chat,
+                R.id.ll_body_chat,
+                R.id.ll_drag_chat,
+                R.id.btn_drag_chat,
+                R.id.btn_up_chat,
+                R.id.btn_down_chat,
+                R.id.btn_collapse_chat,
+                R.id.tv_arrow_chat,
+                R.id.tv_summary_chat
+        );
+        registerSection(
+                SEC_SETUP,
+                R.id.sec_setup,
+                R.id.ll_body_setup,
+                R.id.ll_drag_setup,
+                R.id.btn_drag_setup,
+                R.id.btn_up_setup,
+                R.id.btn_down_setup,
+                R.id.btn_collapse_setup,
+                R.id.tv_arrow_setup,
+                R.id.tv_summary_setup
+        );
+        registerSection(
+                SEC_ARENA,
+                R.id.sec_arena,
+                R.id.ll_body_arena,
+                R.id.ll_drag_arena,
+                R.id.btn_drag_arena,
+                R.id.btn_up_arena,
+                R.id.btn_down_arena,
+                R.id.btn_collapse_arena,
+                R.id.tv_arrow_arena,
+                R.id.tv_summary_arena
+        );
+        registerSection(
+                SEC_HISTORY,
+                R.id.sec_history,
+                R.id.ll_body_history,
+                R.id.ll_drag_history,
+                R.id.btn_drag_history,
+                R.id.btn_up_history,
+                R.id.btn_down_history,
+                R.id.btn_collapse_history,
+                R.id.tv_arrow_history,
+                0
+        );
+
+        // Prevent outer ScrollView from stealing inner YouTube chat scrolling
+        svChatMessages.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                int action = event.getActionMasked();
+                if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_MOVE) {
+                    if (v.getParent() != null) {
+                        v.getParent().requestDisallowInterceptTouchEvent(true);
+                    }
+                } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                    if (v.getParent() != null) {
+                        v.getParent().requestDisallowInterceptTouchEvent(false);
+                    }
+                }
+                return false;
+            }
+        });
+
+        svChatMessages.getViewTreeObserver().addOnScrollChangedListener(new ViewTreeObserver.OnScrollChangedListener() {
+            @Override
+            public void onScrollChanged() {
+                if (svChatMessages.getChildCount() == 0) return;
+                View child = svChatMessages.getChildAt(0);
+                int diff = child.getBottom() - (svChatMessages.getHeight() + svChatMessages.getScrollY());
+                boolean nearBottom = diff <= dp(18);
+                if (chatAutoScroll != nearBottom) {
+                    chatAutoScroll = nearBottom;
+                    btnChatLatest.setVisibility(nearBottom || lastChatMessageCount == 0 ? View.GONE : View.VISIBLE);
+                }
+            }
+        });
+
+        btnChatLatest.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                chatAutoScroll = true;
+                btnChatLatest.setVisibility(View.GONE);
+                scrollChatToBottom();
+            }
+        });
+
+        btnChatRefresh.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                vibrateFeedback(20);
+                fetchYouTubeChat(true);
+            }
+        });
+
+        tvChatUrl.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                openUrlInBrowser(currentChatUrl);
+            }
+        });
+
+        tvStreamYtLabel.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                openUrlInBrowser(currentChatUrl);
+            }
+        });
+
+        // Layout Lock / Unlock button
+        btnLayoutLock.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                vibrateFeedback(25);
+                isLayoutUnlocked = !isLayoutUnlocked;
+                applyLayoutLockUI();
+            }
+        });
+
+        btnResetLayout.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                vibrateFeedback(25);
+                sectionOrder.clear();
+                sectionOrder.addAll(DEFAULT_SECTION_ORDER);
+                applySectionOrderToContainer();
+                saveLayoutPrefs();
+                showToast("Reset section order to default.");
+            }
+        });
 
         // Connect button
         btnConnect.setOnClickListener(new View.OnClickListener() {
@@ -476,7 +728,10 @@ public class MainActivity extends Activity {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
                 if (position >= 0 && position < episodeList.size()) {
-                    onEpisodeSelected(episodeList.get(position));
+                    Episode chosen = episodeList.get(position);
+                    if (selectedEpisode == null || !chosen.id.equals(selectedEpisode.id)) {
+                        onEpisodeSelected(chosen);
+                    }
                 }
             }
 
@@ -512,33 +767,285 @@ public class MainActivity extends Activity {
         });
     }
 
+    private void registerSection(
+            final String id,
+            int cardResId,
+            int bodyResId,
+            int dragControlsResId,
+            int dragHandleResId,
+            int upBtnResId,
+            int downBtnResId,
+            int collapseHeaderResId,
+            int arrowResId,
+            int summaryResId
+    ) {
+        final View card = findViewById(cardResId);
+        View body = findViewById(bodyResId);
+        View dragControls = findViewById(dragControlsResId);
+        View dragHandle = findViewById(dragHandleResId);
+        Button btnUp = (Button) findViewById(upBtnResId);
+        Button btnDown = (Button) findViewById(downBtnResId);
+        View collapseBtn = findViewById(collapseHeaderResId);
+        TextView tvArrow = (TextView) findViewById(arrowResId);
+        TextView tvSummary = summaryResId != 0 ? (TextView) findViewById(summaryResId) : null;
+
+        sectionCardMap.put(id, card);
+        sectionBodyMap.put(id, body);
+        sectionDragControlsMap.put(id, dragControls);
+        sectionArrowMap.put(id, tvArrow);
+        if (tvSummary != null) {
+            sectionSummaryMap.put(id, tvSummary);
+        }
+
+        collapseBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                toggleSectionCollapse(id);
+            }
+        });
+
+        btnUp.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                vibrateFeedback(15);
+                moveSectionByDelta(id, -1);
+            }
+        });
+
+        btnDown.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                vibrateFeedback(15);
+                moveSectionByDelta(id, 1);
+            }
+        });
+
+        dragHandle.setOnTouchListener(new View.OnTouchListener() {
+            private float startRawY = 0f;
+            private long lastSwapAt = 0L;
+
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                if (!isLayoutUnlocked) return false;
+                int action = event.getActionMasked();
+                if (action == MotionEvent.ACTION_DOWN) {
+                    if (llSectionsContainer.getParent() != null) {
+                        llSectionsContainer.getParent().requestDisallowInterceptTouchEvent(true);
+                    }
+                    startRawY = event.getRawY();
+                    lastSwapAt = 0L;
+                    card.setAlpha(0.8f);
+                    vibrateFeedback(20);
+                    return true;
+                } else if (action == MotionEvent.ACTION_MOVE) {
+                    float dy = event.getRawY() - startRawY;
+                    card.setTranslationY(dy);
+                    long now = System.currentTimeMillis();
+                    if (now - lastSwapAt > 130L) {
+                        int idx = sectionOrder.indexOf(id);
+                        int threshold = dp(34);
+                        if (dy < -threshold && idx > 0) {
+                            moveSectionByDelta(id, -1);
+                            card.setTranslationY(0f);
+                            startRawY = event.getRawY();
+                            lastSwapAt = now;
+                            vibrateFeedback(15);
+                        } else if (dy > threshold && idx < sectionOrder.size() - 1) {
+                            moveSectionByDelta(id, 1);
+                            card.setTranslationY(0f);
+                            startRawY = event.getRawY();
+                            lastSwapAt = now;
+                            vibrateFeedback(15);
+                        }
+                    }
+                    return true;
+                } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                    card.setTranslationY(0f);
+                    card.setAlpha(1.0f);
+                    if (llSectionsContainer.getParent() != null) {
+                        llSectionsContainer.getParent().requestDisallowInterceptTouchEvent(false);
+                    }
+                    saveLayoutPrefs();
+                    return true;
+                }
+                return false;
+            }
+        });
+    }
+
+    private void loadLayoutPrefs() {
+        String savedOrder = prefs.getString(PREF_SECTION_ORDER, "");
+        if (!savedOrder.isEmpty()) {
+            List<String> loaded = new ArrayList<String>();
+            String[] parts = savedOrder.split(",");
+            for (String p : parts) {
+                String trimmed = p.trim();
+                if (DEFAULT_SECTION_ORDER.contains(trimmed) && !loaded.contains(trimmed)) {
+                    loaded.add(trimmed);
+                }
+            }
+            for (String defId : DEFAULT_SECTION_ORDER) {
+                if (!loaded.contains(defId)) {
+                    loaded.add(defId);
+                }
+            }
+            sectionOrder.clear();
+            sectionOrder.addAll(loaded);
+        }
+
+        collapsedSections.clear();
+        for (String id : DEFAULT_SECTION_ORDER) {
+            if (prefs.getBoolean(PREF_COLLAPSED_PREFIX + id, false)) {
+                collapsedSections.add(id);
+            }
+        }
+
+        applySectionOrderToContainer();
+        applyCollapsedStatesUI();
+        applyLayoutLockUI();
+    }
+
+    private void saveLayoutPrefs() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < sectionOrder.size(); i++) {
+            if (i > 0) sb.append(",");
+            sb.append(sectionOrder.get(i));
+        }
+        SharedPreferences.Editor ed = prefs.edit();
+        ed.putString(PREF_SECTION_ORDER, sb.toString());
+        for (String id : DEFAULT_SECTION_ORDER) {
+            ed.putBoolean(PREF_COLLAPSED_PREFIX + id, collapsedSections.contains(id));
+        }
+        ed.apply();
+    }
+
+    private void applySectionOrderToContainer() {
+        if (llSectionsContainer == null) return;
+        llSectionsContainer.removeAllViews();
+        for (String id : sectionOrder) {
+            View v = sectionCardMap.get(id);
+            if (v != null) {
+                llSectionsContainer.addView(v);
+            }
+        }
+    }
+
+    private void moveSectionByDelta(String id, int delta) {
+        int idx = sectionOrder.indexOf(id);
+        int target = idx + delta;
+        if (idx < 0 || target < 0 || target >= sectionOrder.size()) return;
+        sectionOrder.remove(idx);
+        sectionOrder.add(target, id);
+        applySectionOrderToContainer();
+        saveLayoutPrefs();
+    }
+
+    private void toggleSectionCollapse(String id) {
+        if (collapsedSections.contains(id)) {
+            collapsedSections.remove(id);
+        } else {
+            collapsedSections.add(id);
+        }
+        applyCollapsedStatesUI();
+        saveLayoutPrefs();
+        if (SEC_CHAT.equals(id)) {
+            if (collapsedSections.contains(SEC_CHAT)) {
+                stopChatPoll();
+            } else {
+                fetchYouTubeChat(true);
+                scheduleChatPollIfActive();
+            }
+        }
+    }
+
+    private void applyCollapsedStatesUI() {
+        for (String id : DEFAULT_SECTION_ORDER) {
+            boolean isCollapsed = collapsedSections.contains(id);
+            View body = sectionBodyMap.get(id);
+            TextView arrow = sectionArrowMap.get(id);
+            if (body != null) {
+                body.setVisibility(isCollapsed ? View.GONE : View.VISIBLE);
+            }
+            if (arrow != null) {
+                arrow.setText(isCollapsed ? "▶" : "▼");
+            }
+        }
+        updateSectionSummariesUI();
+    }
+
+    private void applyLayoutLockUI() {
+        btnLayoutLock.setText(isLayoutUnlocked ? "🔓 UNLOCKED" : "🔒 LOCKED");
+        btnLayoutLock.setBackgroundResource(isLayoutUnlocked ? R.drawable.brutal_btn_pink : R.drawable.brutal_btn_purple);
+        llReorderHint.setVisibility(isLayoutUnlocked ? View.VISIBLE : View.GONE);
+        for (String id : DEFAULT_SECTION_ORDER) {
+            View controls = sectionDragControlsMap.get(id);
+            if (controls != null) {
+                controls.setVisibility(isLayoutUnlocked ? View.VISIBLE : View.GONE);
+            }
+        }
+    }
+
+    private void updateSectionSummariesUI() {
+        TextView sumStream = sectionSummaryMap.get(SEC_STREAM);
+        if (sumStream != null) {
+            if (selectedEpisode != null) {
+                sumStream.setText((selectedEpisode.isLive ? "LIVE • " : "") + selectedEpisode.title);
+            } else {
+                sumStream.setText("");
+            }
+        }
+
+        TextView sumChat = sectionSummaryMap.get(SEC_CHAT);
+        if (sumChat != null) {
+            if (chatIsLiveActive) {
+                sumChat.setText(lastChatMessageCount + " msgs");
+            } else if (selectedEpisode != null && selectedEpisode.youtubeVideoId != null && !selectedEpisode.youtubeVideoId.isEmpty()) {
+                sumChat.setText(selectedEpisode.youtubeVideoId);
+            } else {
+                sumChat.setText("");
+            }
+        }
+
+        TextView sumSetup = sectionSummaryMap.get(SEC_SETUP);
+        if (sumSetup != null) {
+            if (selectedAndyDeck != null && selectedKirstenDeck != null) {
+                sumSetup.setText(selectedAndyDeck.name + " vs " + selectedKirstenDeck.name + " (" + matchFormat + ")");
+            } else {
+                sumSetup.setText(matchFormat);
+            }
+        }
+
+        TextView sumArena = sectionSummaryMap.get(SEC_ARENA);
+        if (sumArena != null) {
+            sumArena.setText(getScore("Andy") + "-" + getScore("Kirsten") + " (" + matchFormat + ")");
+        }
+    }
+
     private void loadSavedSettings() {
         String savedHost = prefs.getString("host", "192.168.1.195");
         if ("127.0.0.1".equals(savedHost) || "localhost".equalsIgnoreCase(savedHost)) {
             savedHost = "192.168.1.195";
         }
         etHost.setText(savedHost);
-        etPort.setText(String.valueOf(prefs.getInt("port", 3000)));
+        String portText = prefs.getString("port_text", null);
+        if (portText == null) {
+            int legacyPort = prefs.getInt("port", 3001);
+            portText = String.valueOf(legacyPort);
+        }
+        etPort.setText(portText);
         etPassword.setText(prefs.getString("password", "villainy"));
     }
 
     private void saveSettings() {
         prefs.edit()
                 .putString("host", etHost.getText().toString().trim())
-                .putInt("port", parsePort(etPort.getText().toString().trim()))
+                .putString("port_text", etPort.getText().toString().trim())
                 .putString("password", etPassword.getText().toString().trim())
                 .apply();
     }
 
-    private int parsePort(String str) {
-        try {
-            return Integer.parseInt(str);
-        } catch (Exception e) {
-            return 3000;
-        }
-    }
-
     private void showConnectScreen() {
+        stopChatPoll();
         viewController.setVisibility(View.GONE);
         viewConnect.setVisibility(View.VISIBLE);
         btnConnect.setEnabled(true);
@@ -550,6 +1057,7 @@ public class MainActivity extends Activity {
         viewConnect.setVisibility(View.GONE);
         viewController.setVisibility(View.VISIBLE);
         updateScoreboardUI();
+        scheduleChatPollIfActive();
     }
 
     private void showToast(final String message) {
@@ -561,7 +1069,7 @@ public class MainActivity extends Activity {
             public void run() {
                 tvToast.setVisibility(View.GONE);
             }
-        }, 3500);
+        }, 3000);
     }
 
     private void vibrateFeedback(long ms) {
@@ -570,6 +1078,16 @@ public class MainActivity extends Activity {
                 vibrator.vibrate(ms);
             } catch (Exception ignored) {}
         }
+    }
+
+    private void openUrlInBrowser(String url) {
+        if (url == null || url.trim().isEmpty()) return;
+        String clean = url.trim();
+        if (!clean.startsWith("http://") && !clean.startsWith("https://")) return;
+        try {
+            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(clean));
+            startActivity(intent);
+        } catch (Exception ignored) {}
     }
 
     // -------------------------------------------------------------
@@ -581,7 +1099,7 @@ public class MainActivity extends Activity {
         final String password = etPassword.getText().toString().trim();
 
         if (host.isEmpty()) {
-            Toast.makeText(this, "Please enter Host / IP", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Please enter Host / URL", Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -609,64 +1127,21 @@ public class MainActivity extends Activity {
             @Override
             public void run() {
                 try {
-                    // 1. Authenticate with admin password
                     if (!password.isEmpty()) {
                         JSONObject authBody = new JSONObject();
                         authBody.put("password", password);
-                        try {
-                            postJson(baseUrl + "/api/admin/auth", authBody.toString());
-                        } catch (Exception authEx) {
-                            Log.w(TAG, "Admin auth notice: " + authEx.getMessage());
-                        }
+                        postJson(baseUrl + "/api/admin/auth", authBody.toString());
                     }
 
-                    // 2. Fetch Episodes
-                    String episodesJson = getJson(baseUrl + "/api/episodes");
+                    String episodesJson = getJson(baseUrl + "/api/episodes?includeHidden=true");
                     JSONObject epObj = new JSONObject(episodesJson);
                     JSONArray epArr = epObj.optJSONArray("episodes");
-                    final List<Episode> fetchedEpisodes = new ArrayList<Episode>();
-                    if (epArr != null) {
-                        for (int i = 0; i < epArr.length(); i++) {
-                            JSONObject o = epArr.getJSONObject(i);
-                            Episode ep = new Episode();
-                            ep.id = o.optString("id");
-                            ep.title = o.optString("title", "Episode " + (i + 1));
-                            ep.episodeNumber = o.optInt("episode_number", 0);
-                            ep.streamDate = o.optString("stream_date", "");
-                            ep.isLive = o.optBoolean("is_live", false);
-                            fetchedEpisodes.add(ep);
-                        }
-                    }
+                    final List<Episode> fetchedEpisodes = parseEpisodesArray(epArr);
 
-                    // 3. Fetch Decks
                     String decksJson = getJson(baseUrl + "/api/decks");
                     JSONObject deckObj = new JSONObject(decksJson);
                     JSONArray deckArr = deckObj.optJSONArray("decks");
-                    final List<Deck> fetchedDecks = new ArrayList<Deck>();
-                    if (deckArr != null) {
-                        for (int i = 0; i < deckArr.length(); i++) {
-                            JSONObject o = deckArr.getJSONObject(i);
-                            Deck d = new Deck();
-                            d.id = o.optString("id");
-                            d.name = o.optString("deck_name", "Deck " + (i + 1));
-                            d.pilot = o.optString("pilot", "");
-                            d.builtBy = o.optString("built_by", "");
-                            d.inkOne = o.optString("ink_one", "");
-                            d.inkTwo = o.optString("ink_two", "");
-                            d.episodeId = o.optString("episode_id", "");
-
-                            JSONArray assigned = o.optJSONArray("assigned_episodes");
-                            if (assigned != null) {
-                                for (int j = 0; j < assigned.length(); j++) {
-                                    JSONObject asObj = assigned.optJSONObject(j);
-                                    if (asObj != null) {
-                                        d.assignedEpisodes.add(asObj.optString("episode_id"));
-                                    }
-                                }
-                            }
-                            fetchedDecks.add(d);
-                        }
-                    }
+                    final List<Deck> fetchedDecks = parseDecksArray(deckArr);
 
                     mainHandler.post(new Runnable() {
                         @Override
@@ -691,6 +1166,57 @@ public class MainActivity extends Activity {
         });
     }
 
+    private List<Episode> parseEpisodesArray(JSONArray epArr) {
+        List<Episode> list = new ArrayList<Episode>();
+        if (epArr == null) return list;
+        for (int i = 0; i < epArr.length(); i++) {
+            JSONObject o = epArr.optJSONObject(i);
+            if (o == null) continue;
+            Episode ep = new Episode();
+            ep.id = o.optString("id");
+            ep.title = o.optString("title", "Episode " + (i + 1));
+            ep.episodeNumber = o.optInt("episode_number", 0);
+            ep.streamDate = o.optString("stream_date", "");
+            ep.isLive = o.optBoolean("is_live", false);
+            ep.youtubeVideoId = o.isNull("youtube_video_id") ? "" : o.optString("youtube_video_id", "");
+            ep.vodUrl = o.isNull("vod_url") ? "" : o.optString("vod_url", "");
+            if (ep.vodUrl.isEmpty() && !ep.youtubeVideoId.isEmpty()) {
+                ep.vodUrl = "https://www.youtube.com/watch?v=" + ep.youtubeVideoId;
+            }
+            list.add(ep);
+        }
+        return list;
+    }
+
+    private List<Deck> parseDecksArray(JSONArray deckArr) {
+        List<Deck> list = new ArrayList<Deck>();
+        if (deckArr == null) return list;
+        for (int i = 0; i < deckArr.length(); i++) {
+            JSONObject o = deckArr.optJSONObject(i);
+            if (o == null) continue;
+            Deck d = new Deck();
+            d.id = o.optString("id");
+            d.name = o.optString("deck_name", "Deck " + (i + 1));
+            d.pilot = o.optString("pilot", "");
+            d.builtBy = o.optString("built_by", "");
+            d.inkOne = o.optString("ink_one", "");
+            d.inkTwo = o.optString("ink_two", "");
+            d.episodeId = o.optString("episode_id", "");
+
+            JSONArray assigned = o.optJSONArray("assigned_episodes");
+            if (assigned != null) {
+                for (int j = 0; j < assigned.length(); j++) {
+                    JSONObject asObj = assigned.optJSONObject(j);
+                    if (asObj != null) {
+                        d.assignedEpisodes.add(asObj.optString("episode_id"));
+                    }
+                }
+            }
+            list.add(d);
+        }
+        return list;
+    }
+
     private void onConnectedSuccess(List<Episode> episodes, List<Deck> decks) {
         episodeList.clear();
         episodeList.addAll(episodes);
@@ -698,13 +1224,11 @@ public class MainActivity extends Activity {
         allDeckList.clear();
         allDeckList.addAll(decks);
 
-        // Populate Episodes spinner with custom high-contrast white text layout
         ArrayAdapter<Episode> epAdapter = new ArrayAdapter<Episode>(
                 this, R.layout.spinner_item, episodeList);
         epAdapter.setDropDownViewResource(R.layout.spinner_dropdown_item);
         spEpisodes.setAdapter(epAdapter);
 
-        // Select live episode, or first
         int selectedIndex = 0;
         for (int i = 0; i < episodeList.size(); i++) {
             if (episodeList.get(i).isLive) {
@@ -724,8 +1248,8 @@ public class MainActivity extends Activity {
     private void onEpisodeSelected(Episode ep) {
         selectedEpisode = ep;
         updateLiveButtonUI();
+        updateStreamYouTubeHeaderUI();
 
-        // Filter decks assigned to this episode or all decks
         currentEpisodeDecks.clear();
         for (Deck d : allDeckList) {
             if (ep.id.equals(d.episodeId) || d.assignedEpisodes.contains(ep.id)) {
@@ -742,7 +1266,6 @@ public class MainActivity extends Activity {
         DeckAdapter deckAdapter2 = new DeckAdapter(this, currentEpisodeDecks);
         spKirstenDeck.setAdapter(deckAdapter2);
 
-        // Default to first two decks
         int andyIdx = 0;
         int kirstenIdx = currentEpisodeDecks.size() > 1 ? 1 : 0;
 
@@ -757,11 +1280,48 @@ public class MainActivity extends Activity {
         updateScoreboardUI();
         fetchStreamMatches(ep.id);
         fetchLiveMatch(ep.id);
+
+        // Reset chat display for new stream & load immediately if Chat is open
+        lastChatMessageCount = 0;
+        chatAutoScroll = true;
+        btnChatLatest.setVisibility(View.GONE);
+        tvChatMessages.setVisibility(View.GONE);
+        tvChatEmpty.setVisibility(View.VISIBLE);
+        tvChatEmpty.setText("Connecting to YouTube chat...");
+        if (!collapsedSections.contains(SEC_CHAT)) {
+            fetchYouTubeChat(true);
+            scheduleChatPollIfActive();
+        }
+    }
+
+    private void updateStreamYouTubeHeaderUI() {
+        if (selectedEpisode == null) {
+            tvStreamYtLabel.setVisibility(View.GONE);
+            currentChatUrl = "";
+            tvChatUrl.setText("Select a stream");
+            return;
+        }
+        String url = selectedEpisode.vodUrl != null ? selectedEpisode.vodUrl.trim() : "";
+        if (url.isEmpty() && selectedEpisode.youtubeVideoId != null && !selectedEpisode.youtubeVideoId.isEmpty()) {
+            url = "https://www.youtube.com/watch?v=" + selectedEpisode.youtubeVideoId;
+        }
+        currentChatUrl = url;
+        if (!url.isEmpty()) {
+            tvStreamYtLabel.setText("YouTube: " + url);
+            tvStreamYtLabel.setVisibility(View.VISIBLE);
+            tvChatUrl.setText(url);
+            tvChatUrl.setTextColor(Color.parseColor("#FF4B91"));
+        } else {
+            tvStreamYtLabel.setVisibility(View.GONE);
+            tvChatUrl.setText("No YouTube URL linked to this stream");
+            tvChatUrl.setTextColor(Color.parseColor("#9CA3AF"));
+        }
+        updateSectionSummariesUI();
     }
 
     private void refreshData() {
         vibrateFeedback(30);
-        showToast("⟳ Refreshing stream & decks...");
+        showToast("⟳ Refreshing stream, decks & chat...");
 
         final String prevEpisodeId = selectedEpisode != null ? selectedEpisode.id : null;
         final String prevAndyDeckId = selectedAndyDeck != null ? selectedAndyDeck.id : null;
@@ -771,53 +1331,13 @@ public class MainActivity extends Activity {
             @Override
             public void run() {
                 try {
-                    // 1. Fetch Episodes
-                    String episodesJson = getJson(baseUrl + "/api/episodes");
+                    String episodesJson = getJson(baseUrl + "/api/episodes?includeHidden=true");
                     JSONObject epObj = new JSONObject(episodesJson);
-                    JSONArray epArr = epObj.optJSONArray("episodes");
-                    final List<Episode> fetchedEpisodes = new ArrayList<Episode>();
-                    if (epArr != null) {
-                        for (int i = 0; i < epArr.length(); i++) {
-                            JSONObject o = epArr.getJSONObject(i);
-                            Episode ep = new Episode();
-                            ep.id = o.optString("id");
-                            ep.title = o.optString("title", "Episode " + (i + 1));
-                            ep.episodeNumber = o.optInt("episode_number", 0);
-                            ep.streamDate = o.optString("stream_date", "");
-                            ep.isLive = o.optBoolean("is_live", false);
-                            fetchedEpisodes.add(ep);
-                        }
-                    }
+                    final List<Episode> fetchedEpisodes = parseEpisodesArray(epObj.optJSONArray("episodes"));
 
-                    // 2. Fetch Decks
                     String decksJson = getJson(baseUrl + "/api/decks");
                     JSONObject deckObj = new JSONObject(decksJson);
-                    JSONArray deckArr = deckObj.optJSONArray("decks");
-                    final List<Deck> fetchedDecks = new ArrayList<Deck>();
-                    if (deckArr != null) {
-                        for (int i = 0; i < deckArr.length(); i++) {
-                            JSONObject o = deckArr.getJSONObject(i);
-                            Deck d = new Deck();
-                            d.id = o.optString("id");
-                            d.name = o.optString("deck_name", "Deck " + (i + 1));
-                            d.pilot = o.optString("pilot", "");
-                            d.builtBy = o.optString("built_by", "");
-                            d.inkOne = o.optString("ink_one", "");
-                            d.inkTwo = o.optString("ink_two", "");
-                            d.episodeId = o.optString("episode_id", "");
-
-                            JSONArray assigned = o.optJSONArray("assigned_episodes");
-                            if (assigned != null) {
-                                for (int j = 0; j < assigned.length(); j++) {
-                                    JSONObject asObj = assigned.optJSONObject(j);
-                                    if (asObj != null) {
-                                        d.assignedEpisodes.add(asObj.optString("episode_id"));
-                                    }
-                                }
-                            }
-                            fetchedDecks.add(d);
-                        }
-                    }
+                    final List<Deck> fetchedDecks = parseDecksArray(deckObj.optJSONArray("decks"));
 
                     mainHandler.post(new Runnable() {
                         @Override
@@ -833,7 +1353,6 @@ public class MainActivity extends Activity {
                             epAdapter.setDropDownViewResource(R.layout.spinner_dropdown_item);
                             spEpisodes.setAdapter(epAdapter);
 
-                            // Find and restore previously selected episode
                             int epIdx = 0;
                             if (prevEpisodeId != null) {
                                 for (int i = 0; i < episodeList.size(); i++) {
@@ -847,8 +1366,8 @@ public class MainActivity extends Activity {
                                 spEpisodes.setSelection(epIdx);
                                 selectedEpisode = episodeList.get(epIdx);
                                 updateLiveButtonUI();
+                                updateStreamYouTubeHeaderUI();
 
-                                // Update decks for selected episode
                                 currentEpisodeDecks.clear();
                                 for (Deck d : allDeckList) {
                                     if (selectedEpisode.id.equals(d.episodeId) || d.assignedEpisodes.contains(selectedEpisode.id)) {
@@ -865,7 +1384,6 @@ public class MainActivity extends Activity {
                                 DeckAdapter deckAdapter2 = new DeckAdapter(MainActivity.this, currentEpisodeDecks);
                                 spKirstenDeck.setAdapter(deckAdapter2);
 
-                                // Restore deck selections if still available
                                 int andyIdx = 0;
                                 int kirstenIdx = currentEpisodeDecks.size() > 1 ? 1 : 0;
 
@@ -896,10 +1414,13 @@ public class MainActivity extends Activity {
                             }
 
                             updateScoreboardUI();
-                            showToast("⟳ Stream & Decks Refreshed!");
+                            showToast("⟳ Refreshed!");
                             if (selectedEpisode != null) {
                                 fetchStreamMatches(selectedEpisode.id);
                                 fetchLiveMatch(selectedEpisode.id);
+                                if (!collapsedSections.contains(SEC_CHAT)) {
+                                    fetchYouTubeChat(true);
+                                }
                             }
                         }
                     });
@@ -918,17 +1439,199 @@ public class MainActivity extends Activity {
         });
     }
 
+    // -------------------------------------------------------------
+    // YouTube Live Chat Reader (Polling only while section is open)
+    // -------------------------------------------------------------
+    private final Runnable chatPollRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (viewController == null || viewController.getVisibility() != View.VISIBLE) {
+                return;
+            }
+            if (collapsedSections.contains(SEC_CHAT) || selectedEpisode == null) {
+                return;
+            }
+            fetchYouTubeChat(false);
+            chatPollHandler.postDelayed(this, Math.max(chatPollIntervalMs, 5000L));
+        }
+    };
+
+    private void stopChatPoll() {
+        chatPollHandler.removeCallbacks(chatPollRunnable);
+    }
+
+    private void scheduleChatPollIfActive() {
+        stopChatPoll();
+        if (viewController != null
+                && viewController.getVisibility() == View.VISIBLE
+                && !collapsedSections.contains(SEC_CHAT)
+                && selectedEpisode != null) {
+            chatPollHandler.postDelayed(chatPollRunnable, Math.max(chatPollIntervalMs, 5000L));
+        }
+    }
+
+    private void scrollChatToBottom() {
+        svChatMessages.post(new Runnable() {
+            @Override
+            public void run() {
+                svChatMessages.fullScroll(View.FOCUS_DOWN);
+            }
+        });
+    }
+
+    private void fetchYouTubeChat(final boolean forceRefresh) {
+        if (selectedEpisode == null) return;
+        final String epId = selectedEpisode.id;
+        if (forceRefresh) {
+            btnChatRefresh.setEnabled(false);
+        }
+
+        executor.execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    String url = baseUrl + "/api/admin/youtube-chat?episodeId=" + epId
+                            + (forceRefresh ? "&refresh=1" : "");
+                    String jsonStr = getJson(url);
+                    final JSONObject obj = new JSONObject(jsonStr);
+
+                    mainHandler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            btnChatRefresh.setEnabled(true);
+                            if (selectedEpisode == null || !epId.equals(selectedEpisode.id)) {
+                                return;
+                            }
+
+                            chatIsLiveActive = obj.optBoolean("liveChatActive", false);
+                            long serverInterval = obj.optLong("pollingIntervalMs", 6000L);
+                            if (serverInterval >= 3000L) {
+                                chatPollIntervalMs = serverInterval;
+                            }
+
+                            String serverUrl = obj.isNull("vodUrl") ? "" : obj.optString("vodUrl", "");
+                            if (!serverUrl.isEmpty()) {
+                                currentChatUrl = serverUrl;
+                                tvChatUrl.setText(serverUrl);
+                                tvChatUrl.setTextColor(Color.parseColor("#FF4B91"));
+                            }
+
+                            if (chatIsLiveActive) {
+                                tvChatStatusPill.setText("LIVE");
+                                tvChatStatusPill.setBackgroundResource(R.drawable.brutal_tag_teal);
+                                tvChatStatusPill.setTextColor(Color.BLACK);
+                            } else {
+                                tvChatStatusPill.setText("IDLE");
+                                tvChatStatusPill.setBackgroundResource(R.drawable.brutal_btn_dark);
+                                tvChatStatusPill.setTextColor(Color.parseColor("#9CA3AF"));
+                            }
+
+                            JSONArray msgArr = obj.optJSONArray("messages");
+                            String statusMsg = obj.isNull("statusMessage") ? "" : obj.optString("statusMessage", "");
+
+                            if (msgArr == null || msgArr.length() == 0) {
+                                lastChatMessageCount = 0;
+                                tvChatMessages.setVisibility(View.GONE);
+                                tvChatEmpty.setVisibility(View.VISIBLE);
+                                tvChatEmpty.setText(statusMsg.isEmpty() ? "No chat messages yet." : statusMsg);
+                                btnChatLatest.setVisibility(View.GONE);
+                                updateSectionSummariesUI();
+                                return;
+                            }
+
+                            SpannableStringBuilder ssb = new SpannableStringBuilder();
+                            for (int i = 0; i < msgArr.length(); i++) {
+                                JSONObject m = msgArr.optJSONObject(i);
+                                if (m == null) continue;
+                                if (ssb.length() > 0) ssb.append("\n");
+
+                                String time = m.optString("timeLabel", "");
+                                String badge = m.isNull("authorBadge") ? "" : m.optString("authorBadge", "");
+                                String author = m.optString("authorName", "Viewer");
+                                String text = m.optString("message", "");
+                                String superAmt = m.isNull("superChatAmount") ? "" : m.optString("superChatAmount", "");
+
+                                if (!time.isEmpty()) {
+                                    int tStart = ssb.length();
+                                    ssb.append(time).append(" ");
+                                    ssb.setSpan(new ForegroundColorSpan(Color.parseColor("#6B7280")), tStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                }
+
+                                if (!badge.isEmpty()) {
+                                    int bStart = ssb.length();
+                                    ssb.append("[").append(badge).append("] ");
+                                    int badgeColor = Color.parseColor("#00F5D4");
+                                    if ("OWNER".equals(badge)) {
+                                        badgeColor = Color.parseColor("#FFB703");
+                                    } else if ("MEMBER".equals(badge)) {
+                                        badgeColor = Color.parseColor("#4ADE80");
+                                    }
+                                    ssb.setSpan(new ForegroundColorSpan(badgeColor), bStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                    ssb.setSpan(new StyleSpan(Typeface.BOLD), bStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                }
+
+                                int aStart = ssb.length();
+                                ssb.append(author).append(": ");
+                                int authorColor = "OWNER".equals(badge)
+                                        ? Color.parseColor("#FFB703")
+                                        : ("MOD".equals(badge) ? Color.parseColor("#00F5D4") : Color.parseColor("#C084FC"));
+                                ssb.setSpan(new ForegroundColorSpan(authorColor), aStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                ssb.setSpan(new StyleSpan(Typeface.BOLD), aStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+                                if (!superAmt.isEmpty()) {
+                                    int scStart = ssb.length();
+                                    ssb.append("[").append(superAmt).append("] ");
+                                    ssb.setSpan(new BackgroundColorSpan(Color.parseColor("#452900")), scStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                    ssb.setSpan(new ForegroundColorSpan(Color.parseColor("#FFB703")), scStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                    ssb.setSpan(new StyleSpan(Typeface.BOLD), scStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                                }
+
+                                int msgStart = ssb.length();
+                                ssb.append(text);
+                                ssb.setSpan(new ForegroundColorSpan(Color.parseColor("#F4F4F6")), msgStart, ssb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                            }
+
+                            lastChatMessageCount = msgArr.length();
+                            tvChatEmpty.setVisibility(View.GONE);
+                            tvChatMessages.setVisibility(View.VISIBLE);
+                            tvChatMessages.setText(ssb);
+                            if (chatAutoScroll) {
+                                scrollChatToBottom();
+                            }
+                            updateSectionSummariesUI();
+                        }
+                    });
+                } catch (final Exception e) {
+                    Log.w(TAG, "Chat fetch warning: " + e.getMessage());
+                    mainHandler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            btnChatRefresh.setEnabled(true);
+                            tvChatStatusPill.setText("ERR");
+                            if (lastChatMessageCount == 0) {
+                                tvChatEmpty.setVisibility(View.VISIBLE);
+                                tvChatMessages.setVisibility(View.GONE);
+                                tvChatEmpty.setText("Chat unavailable: " + e.getMessage());
+                            }
+                        }
+                    });
+                }
+            }
+        });
+    }
+
     private void updateLiveButtonUI() {
         if (selectedEpisode == null) return;
         if (selectedEpisode.isLive) {
-            btnToggleLive.setText("● STREAM LIVE");
-            btnToggleLive.setBackgroundResource(R.drawable.brutal_btn_teal);
-            btnToggleLive.setTextColor(Color.parseColor("#000000"));
+            btnToggleLive.setText("● LIVE");
+            btnToggleLive.setBackgroundResource(R.drawable.brutal_btn_pink);
+            btnToggleLive.setTextColor(Color.parseColor("#FFFFFF"));
         } else {
             btnToggleLive.setText("● OFF-AIR");
             btnToggleLive.setBackgroundResource(R.drawable.brutal_btn_dark);
             btnToggleLive.setTextColor(Color.parseColor("#9CA3AF"));
         }
+        updateSectionSummariesUI();
     }
 
     private void toggleLiveStatus() {
@@ -988,7 +1691,6 @@ public class MainActivity extends Activity {
         matchFormat = fmt;
         winsNeeded = needed;
 
-        // Update button styles
         btnBo1.setBackgroundResource("Bo1".equals(fmt) ? R.drawable.brutal_btn_amber : R.drawable.brutal_btn_dark);
         btnBo1.setTextColor(Color.parseColor("Bo1".equals(fmt) ? "#000000" : "#D1D5DB"));
 
@@ -1012,7 +1714,7 @@ public class MainActivity extends Activity {
         isMatchLive = true;
         gameLog.clear();
         updateScoreboardUI();
-        showToast("⚔️ Match started! Decks locked in & displaying 0-0 on OBS overlay.");
+        showToast("⚔️ Match started! 0-0 live on OBS.");
         sendLiveMatchUpdate();
     }
 
@@ -1065,6 +1767,14 @@ public class MainActivity extends Activity {
                     String res = getJson(baseUrl + "/api/matches/live?episodeId=" + epId);
                     JSONObject obj = new JSONObject(res);
                     if (!obj.has("liveMatch") || obj.isNull("liveMatch")) {
+                        mainHandler.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                isMatchLive = false;
+                                gameLog.clear();
+                                updateScoreboardUI();
+                            }
+                        });
                         return;
                     }
                     JSONObject live = obj.getJSONObject("liveMatch");
@@ -1129,7 +1839,7 @@ public class MainActivity extends Activity {
         int kirstenWins = getScore("Kirsten");
 
         if (andyWins >= winsNeeded || kirstenWins >= winsNeeded) {
-            return; // Already clinched
+            return;
         }
 
         vibrateFeedback(60);
@@ -1188,6 +1898,14 @@ public class MainActivity extends Activity {
         tvKirstenScore.setText(String.valueOf(kirstenWins));
         tvWinsNeeded.setText("FIRST TO " + winsNeeded);
 
+        // Update format buttons highlight even after resume
+        btnBo1.setBackgroundResource("Bo1".equals(matchFormat) ? R.drawable.brutal_btn_amber : R.drawable.brutal_btn_dark);
+        btnBo1.setTextColor(Color.parseColor("Bo1".equals(matchFormat) ? "#000000" : "#D1D5DB"));
+        btnBo3.setBackgroundResource("Bo3".equals(matchFormat) ? R.drawable.brutal_btn_amber : R.drawable.brutal_btn_dark);
+        btnBo3.setTextColor(Color.parseColor("Bo3".equals(matchFormat) ? "#000000" : "#D1D5DB"));
+        btnBo5.setBackgroundResource("Bo5".equals(matchFormat) ? R.drawable.brutal_btn_amber : R.drawable.brutal_btn_dark);
+        btnBo5.setTextColor(Color.parseColor("Bo5".equals(matchFormat) ? "#000000" : "#D1D5DB"));
+
         // Lock deck pickers and format while match is live
         spAndyDeck.setEnabled(!isMatchLive);
         spKirstenDeck.setEnabled(!isMatchLive);
@@ -1197,19 +1915,19 @@ public class MainActivity extends Activity {
         btnBo3.setEnabled(!isMatchLive);
         btnBo5.setEnabled(!isMatchLive);
 
+        updateSectionSummariesUI();
+
         boolean clinched = (andyWins >= winsNeeded || kirstenWins >= winsNeeded);
         String clincher = andyWins >= winsNeeded ? "Andy" : (kirstenWins >= winsNeeded ? "Kirsten" : null);
 
         if (!isMatchLive) {
-            tvSeriesStatus.setText("Ready for Match • " + matchFormat);
+            tvSeriesStatus.setText("Ready • " + matchFormat);
             tvSeriesStatus.setBackgroundResource(R.drawable.brutal_tag_teal);
             tvSeriesStatus.setTextColor(Color.parseColor("#000000"));
 
             btnStartMatch.setVisibility(View.VISIBLE);
-            btnAndyWin.setVisibility(View.GONE);
-            btnKirstenWin.setVisibility(View.GONE);
-            btnUndo.setVisibility(View.GONE);
-            btnReset.setVisibility(View.GONE);
+            llWinButtonsRow.setVisibility(View.GONE);
+            llArenaActionsRow.setVisibility(View.GONE);
             btnSaveMatch.setVisibility(View.GONE);
             tvGameLog.setVisibility(View.GONE);
             return;
@@ -1217,15 +1935,13 @@ public class MainActivity extends Activity {
 
         // When match IS live:
         btnStartMatch.setVisibility(View.GONE);
-        btnAndyWin.setVisibility(View.VISIBLE);
-        btnKirstenWin.setVisibility(View.VISIBLE);
-        btnUndo.setVisibility(View.VISIBLE);
-        btnReset.setVisibility(View.VISIBLE);
-        btnReset.setText("CANCEL MATCH");
+        llWinButtonsRow.setVisibility(View.VISIBLE);
+        llArenaActionsRow.setVisibility(View.VISIBLE);
+        btnReset.setText("CANCEL");
         btnSaveMatch.setVisibility(View.VISIBLE);
 
         if (clinched) {
-            tvSeriesStatus.setText(clincher + " CLINCHED " + matchFormat + " SERIES (" + andyWins + "-" + kirstenWins + ")! 🏆");
+            tvSeriesStatus.setText(clincher.toUpperCase() + " CLINCHED (" + andyWins + "-" + kirstenWins + ")");
             tvSeriesStatus.setBackgroundResource(R.drawable.brutal_btn_amber);
             tvSeriesStatus.setTextColor(Color.parseColor("#000000"));
         } else {
@@ -1233,40 +1949,38 @@ public class MainActivity extends Activity {
             tvSeriesStatus.setTextColor(Color.parseColor("#000000"));
 
             if (andyWins == 0 && kirstenWins == 0) {
-                tvSeriesStatus.setText("Game 1 • Series 0-0 (" + matchFormat + ")");
+                tvSeriesStatus.setText("G1 • 0-0 (" + matchFormat + ")");
             } else if (andyWins == kirstenWins) {
-                tvSeriesStatus.setText("Game " + currentGame + " • Series tied " + andyWins + "-" + kirstenWins);
+                tvSeriesStatus.setText("G" + currentGame + " • Tied " + andyWins + "-" + kirstenWins);
             } else {
                 String leader = andyWins > kirstenWins ? "Andy" : "Kirsten";
                 int high = Math.max(andyWins, kirstenWins);
                 int low = Math.min(andyWins, kirstenWins);
-                tvSeriesStatus.setText("Game " + currentGame + " • " + leader + " leads " + high + "-" + low);
+                tvSeriesStatus.setText("G" + currentGame + " • " + leader + " " + high + "-" + low);
             }
         }
 
-        // Update Win Buttons
-        String andyDeckName = selectedAndyDeck != null ? selectedAndyDeck.name : "Andy's Deck";
-        String kirstenDeckName = selectedKirstenDeck != null ? selectedKirstenDeck.name : "Kirsten's Deck";
+        String andyDeckName = selectedAndyDeck != null ? selectedAndyDeck.name : "Andy";
+        String kirstenDeckName = selectedKirstenDeck != null ? selectedKirstenDeck.name : "Kirsten";
 
         if (clinched) {
             btnAndyWin.setEnabled(false);
             btnAndyWin.setAlpha(0.35f);
-            btnAndyWin.setText("ANDY (" + andyWins + " WINS)\n" + andyDeckName);
+            btnAndyWin.setText("ANDY (" + andyWins + "W)\n" + andyDeckName);
 
             btnKirstenWin.setEnabled(false);
             btnKirstenWin.setAlpha(0.35f);
-            btnKirstenWin.setText("KIRSTEN (" + kirstenWins + " WINS)\n" + kirstenDeckName);
+            btnKirstenWin.setText("KIRSTEN (" + kirstenWins + "W)\n" + kirstenDeckName);
         } else {
             btnAndyWin.setEnabled(true);
             btnAndyWin.setAlpha(1.0f);
-            btnAndyWin.setText("ANDY WON GAME " + currentGame + "\n" + andyDeckName);
+            btnAndyWin.setText("ANDY WON G" + currentGame + "\n" + andyDeckName);
 
             btnKirstenWin.setEnabled(true);
             btnKirstenWin.setAlpha(1.0f);
-            btnKirstenWin.setText("KIRSTEN WON GAME " + currentGame + "\n" + kirstenDeckName);
+            btnKirstenWin.setText("KIRSTEN WON G" + currentGame + "\n" + kirstenDeckName);
         }
 
-        // Action buttons
         boolean hasGames = !gameLog.isEmpty();
         btnUndo.setEnabled(hasGames);
         btnUndo.setAlpha(hasGames ? 1.0f : 0.4f);
@@ -1277,11 +1991,10 @@ public class MainActivity extends Activity {
         btnSaveMatch.setEnabled(hasGames);
         btnSaveMatch.setAlpha(hasGames ? 1.0f : 0.4f);
 
-        // Game Log
         if (hasGames) {
             StringBuilder logText = new StringBuilder();
             for (int i = 0; i < gameLog.size(); i++) {
-                if (i > 0) logText.append("  •  ");
+                if (i > 0) logText.append(" • ");
                 logText.append("G").append(i + 1).append(": ").append(gameLog.get(i));
             }
             tvGameLog.setText(logText.toString());
@@ -1306,7 +2019,7 @@ public class MainActivity extends Activity {
 
         vibrateFeedback(80);
         btnSaveMatch.setEnabled(false);
-        showToast("Saving match to web app...");
+        showToast("Saving match...");
 
         executor.execute(new Runnable() {
             @Override
@@ -1340,8 +2053,8 @@ public class MainActivity extends Activity {
                             gameLog.clear();
                             isMatchLive = false;
                             updateScoreboardUI();
-                            showToast("🏆 Match saved to Deck Test Tuesday!");
-                            Toast.makeText(MainActivity.this, "Match saved successfully!", Toast.LENGTH_SHORT).show();
+                            showToast("🏆 Match saved!");
+                            Toast.makeText(MainActivity.this, "Match saved!", Toast.LENGTH_SHORT).show();
                             if (selectedEpisode != null) {
                                 fetchStreamMatches(selectedEpisode.id);
                                 fetchLiveMatch(selectedEpisode.id);
@@ -1535,7 +2248,7 @@ public class MainActivity extends Activity {
     private void renderMatchHistoryUI() {
         if (llMatchHistoryList == null || tvMatchHistoryCount == null || tvMatchHistoryEmpty == null) return;
 
-        tvMatchHistoryCount.setText(currentStreamMatches.size() + " " + (currentStreamMatches.size() == 1 ? "Match" : "Matches"));
+        tvMatchHistoryCount.setText(String.valueOf(currentStreamMatches.size()));
 
         if (currentStreamMatches.isEmpty()) {
             tvMatchHistoryEmpty.setVisibility(View.VISIBLE);
@@ -1562,20 +2275,19 @@ public class MainActivity extends Activity {
             Button btnEdit = (Button) v.findViewById(R.id.btn_item_edit);
             Button btnDelete = (Button) v.findViewById(R.id.btn_item_delete);
 
-            tvMatchNum.setText("MATCH " + matchNumber + " • " + m.matchFormat);
+            tvMatchNum.setText("M" + matchNumber + " • " + m.matchFormat);
 
-            // Winner badge style
             String winner = m.winner;
             if ("Andy".equalsIgnoreCase(winner)) {
-                tvWinnerBadge.setText("WINNER: ANDY");
+                tvWinnerBadge.setText("ANDY");
                 tvWinnerBadge.setBackgroundResource(R.drawable.brutal_btn_purple);
                 tvWinnerBadge.setTextColor(Color.WHITE);
             } else if ("Kirsten".equalsIgnoreCase(winner)) {
-                tvWinnerBadge.setText("WINNER: KIRSTEN");
+                tvWinnerBadge.setText("KIRSTEN");
                 tvWinnerBadge.setBackgroundResource(R.drawable.brutal_btn_pink);
                 tvWinnerBadge.setTextColor(Color.WHITE);
             } else {
-                tvWinnerBadge.setText("DRAW / TIED");
+                tvWinnerBadge.setText("DRAW");
                 tvWinnerBadge.setBackgroundResource(R.drawable.brutal_tag_teal);
                 tvWinnerBadge.setTextColor(Color.BLACK);
             }
@@ -1647,7 +2359,6 @@ public class MainActivity extends Activity {
 
         tvTitle.setText("✏️ EDIT MATCH " + matchNumber);
 
-        // Populate spinners with current available decks
         DeckAdapter deckAdapterA = new DeckAdapter(this, currentEpisodeDecks);
         spAndy.setAdapter(deckAdapterA);
         DeckAdapter deckAdapterK = new DeckAdapter(this, currentEpisodeDecks);
@@ -1802,7 +2513,7 @@ public class MainActivity extends Activity {
                     mainHandler.post(new Runnable() {
                         @Override
                         public void run() {
-                            showToast("Match updated successfully!");
+                            showToast("Match updated!");
                             Toast.makeText(MainActivity.this, "Match updated!", Toast.LENGTH_SHORT).show();
                             if (selectedEpisode != null) {
                                 fetchStreamMatches(selectedEpisode.id);

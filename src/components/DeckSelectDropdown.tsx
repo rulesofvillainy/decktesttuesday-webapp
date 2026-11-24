@@ -36,6 +36,8 @@ interface DeckSelectDropdownProps {
   theme?: 'andy' | 'kirsten' | 'neutral';
   placeholder?: string;
   className?: string;
+  compact?: boolean;
+  menuAlign?: 'left' | 'right';
 }
 
 export function DeckSelectDropdown({
@@ -48,6 +50,8 @@ export function DeckSelectDropdown({
   theme = 'neutral',
   placeholder = 'Select a deck...',
   className = '',
+  compact = false,
+  menuAlign = 'left',
 }: DeckSelectDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -166,32 +170,36 @@ export function DeckSelectDropdown({
         type="button"
         disabled={disabled}
         onClick={() => setIsOpen((prev) => !prev)}
-        className={`w-full min-h-[52px] bg-[#181920] border-[2px] ${
+        className={`w-full ${
+          compact
+            ? 'min-h-[38px] px-2 py-1 gap-1.5 shadow-[2px_2px_0px_#000000]'
+            : 'min-h-[52px] px-3 py-2 gap-3 shadow-[3px_3px_0px_#000000]'
+        } bg-[#181920] border-[2px] ${
           isOpen ? themeBorder : 'border-black'
-        } shadow-[3px_3px_0px_#000000] px-3 py-2 flex items-center justify-between gap-3 text-left transition-colors ${
+        } flex items-center justify-between text-left transition-colors ${
           disabled ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer hover:bg-[#20222B]'
         }`}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
       >
         {selectedDeck ? (
-          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+          <div className={`flex items-center ${compact ? 'gap-1.5' : 'gap-2.5'} min-w-0 flex-1`}>
             {/* 2 Ink Color Icons */}
-            <div className="flex items-center gap-1 shrink-0">
-              <LorcanaInkIcon ink={selectedDeck.ink_one} size={22} />
-              <LorcanaInkIcon ink={selectedDeck.ink_two} size={22} />
+            <div className={`flex items-center ${compact ? 'gap-0.5' : 'gap-1'} shrink-0`}>
+              <LorcanaInkIcon ink={selectedDeck.ink_one} size={compact ? 16 : 22} />
+              <LorcanaInkIcon ink={selectedDeck.ink_two} size={compact ? 16 : 22} />
             </div>
 
             {/* Deck Name and Colored Inks */}
             <div className="min-w-0 flex-1">
-              <div className="text-sm font-black text-white truncate leading-tight">
+              <div className={`${compact ? 'text-xs' : 'text-sm'} font-black text-white truncate leading-tight`}>
                 {selectedDeck.deck_name}
               </div>
-              <div className="text-[11px] font-mono font-bold leading-tight mt-0.5 truncate">
+              <div className={`${compact ? 'text-[10px]' : 'text-[11px]'} font-mono font-bold leading-tight mt-0.5 truncate`}>
                 <span style={{ color: getInkTextColor(selectedDeck.ink_one) }}>
                   {selectedDeck.ink_one}
                 </span>
-                <span className="text-neutral-500 mx-1">/</span>
+                <span className="text-neutral-500 mx-0.5">/</span>
                 <span style={{ color: getInkTextColor(selectedDeck.ink_two) }}>
                   {selectedDeck.ink_two}
                 </span>
@@ -199,15 +207,17 @@ export function DeckSelectDropdown({
             </div>
           </div>
         ) : (
-          <div className="text-sm text-neutral-400 font-bold">{placeholder}</div>
+          <div className={`${compact ? 'text-xs' : 'text-sm'} text-neutral-400 font-bold truncate`}>
+            {placeholder}
+          </div>
         )}
 
         <div className="shrink-0 text-neutral-400">
           {disabled ? (
-            <Lock className="w-4 h-4 text-neutral-400" />
+            <Lock className={`${compact ? 'w-3.5 h-3.5' : 'w-4 h-4'} text-neutral-400`} />
           ) : (
             <ChevronDown
-              className={`w-5 h-5 text-[#00F5D4] transition-transform duration-200 ${
+              className={`${compact ? 'w-4 h-4' : 'w-5 h-5'} text-[#00F5D4] transition-transform duration-200 ${
                 isOpen ? 'rotate-180' : ''
               }`}
             />
@@ -217,7 +227,15 @@ export function DeckSelectDropdown({
 
       {/* Popover Menu */}
       {isOpen && !disabled && (
-        <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-[#160D24] border-[3px] border-black shadow-[5px_5px_0px_#000000] rounded-none max-h-[380px] flex flex-col overflow-hidden animate-in fade-in-50 duration-100">
+        <div
+          className={`absolute top-full ${
+            compact
+              ? menuAlign === 'right'
+                ? 'right-0 min-w-[230px]'
+                : 'left-0 min-w-[230px]'
+              : 'left-0 right-0'
+          } z-50 mt-1 bg-[#160D24] border-[3px] border-black shadow-[5px_5px_0px_#000000] rounded-none max-h-[340px] flex flex-col overflow-hidden animate-in fade-in-50 duration-100`}
+        >
           {/* Search Box */}
           <div className="p-2 border-b-[2px] border-black bg-[#1F1133] sticky top-0 z-10 flex items-center gap-2">
             <Search className="w-4 h-4 text-[#00F5D4] shrink-0" />

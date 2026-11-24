@@ -178,3 +178,25 @@ export interface YouTubeStreamCandidate {
   is_live: boolean;
   is_upcoming: boolean;
 }
+
+export interface YouTubeLiveChatMessage {
+  id: string;
+  authorName: string;
+  authorBadge: 'OWNER' | 'MOD' | 'MEMBER' | 'VERIFIED' | null;
+  message: string;
+  publishedAt: string;
+  timeLabel: string;
+  superChatAmount?: string | null;
+}
+
+export interface YouTubeLiveChatResponse {
+  configured: boolean;
+  episodeId: string | null;
+  videoId: string | null;
+  vodUrl: string | null;
+  liveChatActive: boolean;
+  pollingIntervalMs: number;
+  statusMessage?: string;
+  error?: string;
+  messages: YouTubeLiveChatMessage[];
+}
